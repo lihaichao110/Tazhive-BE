@@ -1,0 +1,14 @@
+核心插件
+- `fastapi` / `uvicorn`：Web 框架和 ASGI 服务器
+- `langchain` / `langgraph`：核心 Agent 编排
+- `langchain-openai` / `langchain-anthropic`：LLM 提供商适配器
+- `langchain-community`：社区集成（如文档加载器、向量库等）
+- `sqlmodel`：ORM（SQLAlchemy + Pydantic）
+- `psycopg[binary]`：PostgreSQL 驱动（二进制版本，无需编译）
+- `alembic`：数据库迁移
+- `pydantic-settings`：配置管理
+- `python-jose` / `passlib`：JWT 和密码哈希
+- `slowapi`：API 限流
+- `tenacity`：重试机制
+- `langgraph-checkpoint-postgres`：Agent 状态持久化到 PostgreSQL
+- `pgvector`：PostgreSQL 的向量扩展

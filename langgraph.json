@@ -1,0 +1,9 @@
+{
+  "dependencies": [
+    "."  // 引入当前项目代码
+  ],
+  "graphs": {
+    "chat_agent": "./your_agent_file.py:graph"  // 替换成你编译好的图变量名
+  },
+  "env": ".env"
+}
