@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     # 通义千问qwen接口密钥，为None时不启用该模型
     qwen_api_key: str | None = None
+    # deepseek接口密钥，为None时不启用该模型
+    deepseek_api_key: str | None = None
 
     # -------------------------- Langfuse 大模型观测平台配置 --------------------------
     # Langfuse公钥，用于上报Agent/LLM调用链路、token消耗、trace追踪

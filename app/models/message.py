@@ -1,4 +1,4 @@
-from sqlmodel import Field, Column, String, Integer, Text
+from sqlmodel import Field, Column, String, Integer, Text, JSON
 from app.models.base import BaseModel
 
 
@@ -25,31 +25,71 @@ class Message(BaseModel, table=True):
         )
     )
 
-    # 消息正文：允许为NULL，模型只调用工具无文本输出时content为null
+    # 消息正文，对应LangChain Message.content字段
     content: str | None = Field(
         sa_column=Column(
             Text,
             nullable=True,
-            comment="消息文本内容；工具调用消息可存null"
+            comment="消息文本内容；仅工具调用无输出时可为null"
         )
     )
 
-    # 本条消息token消耗数量，用于统计计费
-    token_count: int | None = Field(
+    # LangChain usage_metadata，输入输出、缓存读写token统计
+    usage_metadata: dict | None = Field(
         sa_column=Column(
-            Integer,
-            default=None,
+            JSON,
             nullable=True,
-            comment="本条消息token消耗数量，用于统计计费，可为null"
+            default=None,
+            comment="langchain usage_metadata，输入输出、缓存读写token统计信息"
         )
     )
 
-    # 扩展元数据，PG JSONB，存放tool_calls、trace等
-    meta_data: str | None = Field(
+    # LangChain AIMessage.response_metadata，模型响应完整元信息
+    response_metadata: dict | None = Field(
         sa_column=Column(
-            Text,
-            default=None,
+            JSON,
             nullable=True,
-            comment="扩展元数据，保存JSON字符串；工具调用、trace附加信息，业务自行序列化解析"
+            default=None,
+            comment="AIMessage.response_metadata，模型返回完整响应元数据"
+        )
+    )
+
+    # 模型扩展返回字段，厂商自定义额外字段
+    additional_kwargs: dict | None = Field(
+        sa_column=Column(
+            JSON,
+            nullable=True,
+            default=None,
+            comment="additional_kwargs，厂商扩展字段：reasoning_content、refusal、搜索信息等"
+        )
+    )
+
+    # 工具调用请求数组，AIMessage.tool_calls
+    tool_calls: list | None = Field(
+        sa_column=Column(
+            JSON,
+            nullable=True,
+            default=None,
+            comment="tool_calls数组，AI发起的工具调用请求列表"
+        )
+    )
+
+    # 解析失败的非法工具调用，AIMessage.invalid_tool_calls
+    invalid_tool_calls: list | None = Field(
+        sa_column=Column(
+            JSON,
+            nullable=True,
+            default=None,
+            comment="invalid_tool_calls，解析异常、格式错误的工具调用"
+        )
+    )
+
+    # 大模型侧返回的消息唯一ID
+    message_id: str | None = Field(
+        sa_column=Column(
+            String(100),
+            nullable=True,
+            default=None,
+            comment="大模型返回的消息唯一id"
         )
     )

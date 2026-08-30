@@ -12,3 +12,11 @@ migrate-up:
 # 回退上一个版本
 migrate-downgrade:
 	uv run alembic downgrade -1
+
+# 开发热重载启动
+dev:
+	uv run uvicorn app.main:app --reload
+
+# 普通启动（不重载，生产用）
+run:
+	uv run uvicorn app.main:app
