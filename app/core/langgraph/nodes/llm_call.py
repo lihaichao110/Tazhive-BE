@@ -50,8 +50,14 @@ async def llm_call(state: AgentState, config: RunnableConfig) -> dict:
     # 获取原始历史
     history = state["messages"]
 
+    system_content = state.get("system_prompt") or SYSTEM_CHAT_PROMPT
+    findings = state.get('findings', [])
+    if findings:
+        rag_context = '\n\n'.join(findings)
+        system_content += f"\n\n参考资料：\n{rag_context}"
+
     # 添加系统提示（放在最前面）
-    messages = [SystemMessage(content=SYSTEM_CHAT_PROMPT)] + history
+    messages = [SystemMessage(content=system_content)] + history
 
     # 透传思考模式配置：DeepSeek 等通过 extra_body={"thinking": {...}} 控制思考开关，
     # 前端传 {"type": "disabled"} 即关闭思考、{"type": "enabled"} 开启思考。

@@ -8,6 +8,8 @@ class ChatRequest(BaseModel):
     """
     model: Optional[str] = None
     """前端指定模型，可忽略（后续可支持多模型）"""
+    agent_id: Optional[str] = None
+    """指定使用哪个 Agent"""
     stream: bool = False
     """是否流式返回"""
     thinking: Optional[Dict[str, Any]] = None

@@ -20,7 +20,7 @@ async def get_current_user(
     """根据 JWT 获取当前用户，失败抛出 401"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="无法验证凭据",
+        detail="登录凭据已失效，请重新登录",
         headers={"WWW-Authenticate": "Bearer"},
     )
     user_id = decode_access_token(token)

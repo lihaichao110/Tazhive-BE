@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import desc
 from sqlmodel import Session, select
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
@@ -32,7 +33,7 @@ def list_threads(
     """获取当前用户的全部会话列表"""
     # 查询条件：只查询属于当前登录用户的会话
     threads = db.exec(
-        select(Thread).where(Thread.user_id == current_user.id)
+        select(Thread).where(Thread.user_id == current_user.id).order_by(desc(Thread.created_at))
     ).all()
     return threads
 

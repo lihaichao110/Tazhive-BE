@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """
     # -------------------------- 数据库配置 --------------------------
     # PostgreSQL数据库连接地址，sqlalchemy 连接串格式：驱动://账号:密码@主机:端口/数据库名
-    database_url: str = "postgresql+psycopg://user:password@localhost:5432/agentdb"
+    database_url: str = "postgresql+psycopg://xxxxxxx"
 
     # -------------------------- JWT登录鉴权配置 --------------------------
     # JWT签名密钥，生产环境必须替换为复杂随机字符串，泄露会导致伪造token
@@ -33,6 +33,17 @@ class Settings(BaseSettings):
     langfuse_public_key: str | None = None
     # Langfuse私钥，服务端鉴权，不要暴露给前端
     langfuse_secret_key: str | None = None
+
+    # -------------------------- 嵌入式模型平台配置 --------------------------
+    # 嵌入式模型密钥
+    embed_api_key: str | None = None
+    # 嵌入式模型地址
+    embed_base_url: str | None = None
+    # 嵌入式模型名称
+    embed_model_name: str | None = None
+
+    # -------------------------- 上传文档存放地址 --------------------------
+    upload_dir: str = "uploads"
 
     class Config:
         # 指定读取 .env 文件，会用env内变量覆盖上面类属性的默认值

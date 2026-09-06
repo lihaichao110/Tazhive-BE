@@ -35,6 +35,10 @@ dependencies = [
     "langchain-deepseek>=1.1.0",
     "langchain-core>=1.6.0",
     "logger>=1.4",
+    "langchain-text-splitters>=1.1.2",
+    "docx2txt>=0.9",
+    "path>=17.1.1",
+    "python-multipart>=0.0.32",
 ]
 authors = [
     { name = "lihaichao", email = "17645103861@163.com" },

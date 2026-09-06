@@ -12,9 +12,11 @@ from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.thread import Thread
 from app.models.message import Message
-from app.schemas.chat import ChatRequest, ChatResponse
+from app.schemas.chat import ChatRequest
 from app.core.langgraph.graphs import get_chat_agent
 from app.services.database import engine
+from app.models.agent import Agent
+from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
 
 logger = getLogger(__name__)
 
@@ -176,11 +178,27 @@ async def chat(
     # 获取 Agent
     agent = await get_chat_agent()
 
+    # 默认值
+    system_prompt = SYSTEM_CHAT_PROMPT
+    model_name = payload.model
+
+    # 如果指定了 agent_id，则加载 Agent 配置
+    if payload.agent_id:
+        agent = db.get(Agent, payload.agent_id)
+        if not agent or agent.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="找不到对应的 Agent")
+        if agent.system_prompt:
+            system_prompt = agent.system_prompt
+        if not payload.model and agent.model:
+            model_name = agent.model
+        # 也可使用 agent.temperature 等，但当前未传递
+
     # 输入状态
     input_state = {
         "messages": lc_messages,
-        "model": payload.model,
+        "model": model_name,
         "thinking": payload.thinking,
+        "system_prompt": system_prompt,
     }
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -189,7 +207,7 @@ async def chat(
         return StreamingResponse(
             stream_chat_response(
                 thread_id=thread_id,
-                model=payload.model or "deepseek-v4-flash",
+                model=model_name or "deepseek-v4-flash",
                 agent=agent,
                 input_state=input_state,
                 config=config,
@@ -226,7 +244,7 @@ async def chat(
             "id": str(uuid.uuid4()),
             "object": "chat.completion",
             "created": int(time.time()),
-            "model": payload.model or "deepseek-v4-flash",
+            "model": model_name or "deepseek-v4-flash",
             "choices": [{
                 "index": 0,
                 "message": {

@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 
 class MessageCreate(BaseModel):
@@ -26,3 +27,15 @@ class MessageRead(BaseModel):
     content: str
     # 消息创建时间
     created_at: datetime
+    # 使用量元数据（token消耗等信息）
+    usage_metadata: Optional[Dict[str, Any]] = None
+    # 模型响应元数据
+    response_metadata: Optional[Dict[str, Any]] = None
+    # 附加扩展字段
+    additional_kwargs: Optional[Dict[str, Any]] = None
+    # 工具调用列表
+    tool_calls: Optional[List[Any]] = None
+    # 无效工具调用列表
+    invalid_tool_calls: Optional[List[Any]] = None
+    # 底层原始消息标识ID
+    message_id: Optional[str] = None

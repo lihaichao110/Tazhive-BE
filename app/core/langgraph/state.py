@@ -15,5 +15,7 @@ class AgentState(TypedDict):
     current_step: str
     document_ids: list[str]
     approved: bool
-    # 思考模式配置，透传给大模型（DeepSeek 的 {"type": "enabled"/"disabled"} 等）
+    system_prompt: str
+    """系统提示词"""
     thinking: dict | None
+    # 思考模式配置，透传给大模型（DeepSeek 的 {"type": "enabled"/"disabled"} 等）

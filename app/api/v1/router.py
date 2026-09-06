@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1 import health, auth, threads, messages, chat
+from app.api.v1 import health, auth, threads, messages, chat, documents, agents
 
 # 创建顶层v1版本路由实例，作为v1下所有接口的总路由容器
 api_router = APIRouter()
@@ -11,3 +11,5 @@ api_router.include_router(auth.router, tags=["auth"])
 api_router.include_router(threads.router, tags=["threads"])
 api_router.include_router(messages.router, tags=["messages"])
 api_router.include_router(chat.router, tags=["chat"])
+api_router.include_router(documents.router, tags=["documents"])
+api_router.include_router(agents.router, tags=["agents"])
