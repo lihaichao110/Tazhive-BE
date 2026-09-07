@@ -3,6 +3,8 @@ from app.api.v1.router import api_router
 from app.core.middleware import RequestLoggingMiddleware
 from contextlib import asynccontextmanager
 from app.core.logging import logger
+from app.observability.metrics import metrics_endpoint
+
 
 # 启动时日志（可选）
 @asynccontextmanager
@@ -24,6 +26,11 @@ app = FastAPI(
 
 # 添加请求日志中间件
 app.add_middleware(RequestLoggingMiddleware)
+
+# 添加 metrics 端点
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    return metrics_endpoint()
 
 # 注册 v1 路由
 app.include_router(api_router, prefix="/api/v1")

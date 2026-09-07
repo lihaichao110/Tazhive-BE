@@ -1,0 +1,2 @@
+{"question": "什么是 LangGraph？", "golden_answer": "LangGraph 是一个用于构建有状态、多角色应用程序的库，特别适合 Agent 开发。", "context": "LangGraph 提供了图结构、检查点机制等。"}
+{"question": "如何上传文档？", "golden_answer": "可以通过 POST /api/v1/documents/upload 接口，使用 multipart/form-data 上传文件。", "context": ""}

@@ -5,6 +5,7 @@ from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
 from langchain_core.messages import SystemMessage
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+from app.observability.metrics import LLM_CALL_COUNT, LLM_TOKEN_USED
 from app.services.llm.registry import default_registry
 
 logger = getLogger(__name__)
@@ -78,6 +79,13 @@ async def llm_call(state: AgentState, config: RunnableConfig) -> dict:
         default_registry.rotate()
         model = default_registry.get_model()
         response = await _invoke_with_retry(model, messages, config, **invoke_kwargs)
+
+    LLM_CALL_COUNT.labels(model=model_name).inc()
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        input_tokens = response.usage_metadata.get("input_tokens", 0)
+        output_tokens = response.usage_metadata.get("output_tokens", 0)
+        LLM_TOKEN_USED.labels(model=model_name, type="input").inc(input_tokens)
+        LLM_TOKEN_USED.labels(model=model_name, type="output").inc(output_tokens)
 
     # 返回完整历史 + 助手回复；由于 messages 是普通列表，会覆盖状态中的 messages
     return {"messages": history + [response]}

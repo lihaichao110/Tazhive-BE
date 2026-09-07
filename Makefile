@@ -20,3 +20,7 @@ dev:
 # 普通启动（不重载，生产用）
 run:
 	uv run uvicorn app.main:app
+
+# 数据集执行评测
+eval-custom:
+	uv run python -m app.evals.run_eval $(DATASET)
