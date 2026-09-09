@@ -1,5 +1,10 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from dotenv import load_dotenv
+
+# pydantic-settings 只会把 .env 读进 Settings 对象，不会写入 os.environ。
+# 而 Langfuse 等 SDK 是直接读 os.environ 的，所以这里手动加载一次，确保两者都生效。
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -9,6 +14,12 @@ class Settings(BaseSettings):
     # -------------------------- 数据库配置 --------------------------
     # PostgreSQL数据库连接地址，sqlalchemy 连接串格式：驱动://账号:密码@主机:端口/数据库名
     database_url: str = "postgresql+psycopg://xxxxxxx"
+    # 数据库用户名
+    PG_USER: str
+    # 数据库密码
+    PG_PASSWORD: str
+    # 数据库名
+    PG_DB: str
 
     # -------------------------- JWT登录鉴权配置 --------------------------
     # JWT签名密钥，生产环境必须替换为复杂随机字符串，泄露会导致伪造token

@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from app.api.v1.router import api_router
+from app.core.langgraph.checkpointer import close_async_checkpointer
 from app.core.middleware import RequestLoggingMiddleware
 from contextlib import asynccontextmanager
 from app.core.logging import logger
@@ -15,6 +16,7 @@ async def lifespan(app: FastAPI):
     yield  # 应用正式运行，接收请求
 
     # ========== 关闭阶段：shutdown 逻辑 ==========
+    await close_async_checkpointer()  # 释放 checkpointer 数据库连接，避免阻塞进程退出
     print("应用关闭，释放资源：关闭连接池、清理")
 
 app = FastAPI(

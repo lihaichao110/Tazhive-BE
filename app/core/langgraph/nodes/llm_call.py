@@ -70,7 +70,6 @@ async def llm_call(state: AgentState, config: RunnableConfig) -> dict:
     # 使用 astream 流式调用，并透传 config：
     # 1) 只有流式调用才会触发 on_chat_model_stream 事件；
     # 2) config 透传才能把这些事件向上冒泡到 agent.astream_events。
-    logger.info(f'state: {state}')
     try:
         response = await _invoke_with_retry(llm, messages, config, **invoke_kwargs)
     except Exception as e:

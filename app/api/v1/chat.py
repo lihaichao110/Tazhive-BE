@@ -6,6 +6,7 @@ from typing import AsyncGenerator
 from logging import getLogger
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from langchain_core.runnables import RunnableConfig
 from sqlmodel import Session
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from app.api.deps import get_db, get_current_user
@@ -17,8 +18,11 @@ from app.core.langgraph.graphs import get_chat_agent
 from app.services.database import engine
 from app.models.agent import Agent
 from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
+from langfuse.langchain import CallbackHandler
 
 logger = getLogger(__name__)
+
+langfuse_handler = CallbackHandler()
 
 router = APIRouter(tags=["chat"])
 
@@ -200,7 +204,10 @@ async def chat(
         "thinking": payload.thinking,
         "system_prompt": system_prompt,
     }
-    config = {"configurable": {"thread_id": thread_id}}
+    config: RunnableConfig = {
+        "configurable": {"thread_id": thread_id},
+        "callbacks": [langfuse_handler]
+    }
 
     # 是否使用 流式输出
     if payload.stream:
