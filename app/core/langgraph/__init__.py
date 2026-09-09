@@ -1,3 +1,3 @@
-from app.core.langgraph.state import AgentState
+from app.core.langgraph.state import ChatAgentState
 
-__all__ = [AgentState]
+__all__ = ["ChatAgentState"]

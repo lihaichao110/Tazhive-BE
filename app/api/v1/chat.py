@@ -14,7 +14,7 @@ from app.models.user import User
 from app.models.thread import Thread
 from app.models.message import Message
 from app.schemas.chat import ChatRequest
-from app.core.langgraph.graphs import get_chat_agent
+from app.core.langgraph.agents import get_chat_agent
 from app.services.database import engine
 from app.models.agent import Agent
 from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
@@ -86,16 +86,22 @@ async def stream_chat_response(
     config: dict,
     last_user_content: str | None,
 ) -> AsyncGenerator[str, None]:
-    """生成 SSE 流式响应，并在结束时保存完整消息到数据库"""
+    """生成 SSE 流式响应，并在结束时保存完整消息到数据库。
+
+    token 级增量通过 custom 流接收（StreamingMiddleware 用 stream_writer 转发
+    模型 chunk，规避 create_agent 不透传 config 导致的回调断链）；
+    完整消息（含 tool_calls / usage_metadata，用于落库）通过 messages 流接收。
+    """
     full_content = ""
     final_message = None  # 在循环外初始化，确保 finally 中可访问
     try:
         logger.info(f"流式响应开始：{config}")
-        async for event in agent.astream_events(input_state, config=config, version="v2"):
-            kind = event["event"]
-            if kind == "on_chat_model_stream":
-                chunk = event["data"]["chunk"]
-                # logger.info(f'response_chunk: {chunk}')
+        async for mode, payload in agent.astream(
+            input_state, config=config, stream_mode=["custom", "messages"]
+        ):
+            if mode == "custom":
+                # StreamingMiddleware 转发的 AIMessageChunk 增量
+                chunk = payload
                 delta_content = _extract_text_from_content(chunk.content)
                 # 2. 提取思考推理delta（DeepSeek‑R1等推理模型）
                 delta_reasoning: str | None = chunk.additional_kwargs.get("reasoning_content")
@@ -118,16 +124,16 @@ async def stream_chat_response(
                         }],
                     }
                     yield f"data: {json.dumps(chunk_data)}\n\n"
-            elif kind == "on_chat_model_end":
-                final_message = event["data"]["output"]
-            elif kind == "on_chain_error":
-                # 节点内异常（例如模型彻底调用失败）会以 on_chain_error 事件上报，
-                # 若不加处理会静默吞掉，前端只会收到 [DONE] 而看不到任何错误。
-                err = event["data"].get("error")
-                logger.error(f"Agent 流式调用出错：{err}")
-                error_data = {"error": str(err)}
-                yield f"data: {json.dumps(error_data)}\n\n"
+            else:
+                # messages 流：取模型节点产出的完整消息（工具循环的中间消息
+                # 会被后续消息覆盖），工具结果 ToolMessage 不需要
+                chunk, meta = payload
+                if isinstance(chunk, AIMessage) and meta.get("langgraph_node") == "model":
+                    final_message = chunk
     except Exception as e:
+        # 模型彻底调用失败等异常直接向上抛出，这里统一转成 SSE error 帧，
+        # 前端才能看到错误而不是只收到 [DONE]
+        logger.error(f"Agent 流式调用出错：{e}")
         error_data = {"error": str(e)}
         yield f"data: {json.dumps(error_data)}\n\n"
     finally:
@@ -179,87 +185,57 @@ async def chat(
             last_user_content = msg.get("content")
             break
 
-    # 获取 Agent
-    agent = await get_chat_agent()
+    # 获取对话 Agent（create_agent 构建的编译图）
+    chat_agent = await get_chat_agent()
 
     # 默认值
     system_prompt = SYSTEM_CHAT_PROMPT
     model_name = payload.model
 
-    # 如果指定了 agent_id，则加载 Agent 配置
+    # 如果指定了 agent_id，则加载 Agent 配置（注意与上面的 chat_agent 区分）
     if payload.agent_id:
-        agent = db.get(Agent, payload.agent_id)
-        if not agent or agent.user_id != current_user.id:
+        agent_config = db.get(Agent, payload.agent_id)
+        if not agent_config or agent_config.user_id != current_user.id:
             raise HTTPException(status_code=404, detail="找不到对应的 Agent")
-        if agent.system_prompt:
-            system_prompt = agent.system_prompt
-        if not payload.model and agent.model:
-            model_name = agent.model
-        # 也可使用 agent.temperature 等，但当前未传递
+        if agent_config.system_prompt:
+            system_prompt = agent_config.system_prompt
+        if not payload.model and agent_config.model:
+            model_name = agent_config.model
+        # 也可使用 agent_config.temperature 等，但当前未传递
 
-    # 输入状态
-    input_state = {
-        "messages": lc_messages,
-        "model": model_name,
-        "thinking": payload.thinking,
-        "system_prompt": system_prompt,
-    }
     config: RunnableConfig = {
         "configurable": {"thread_id": thread_id},
         "callbacks": [langfuse_handler]
     }
 
-    # 是否使用 流式输出
-    if payload.stream:
-        return StreamingResponse(
-            stream_chat_response(
-                thread_id=thread_id,
-                model=model_name or "deepseek-v4-flash",
-                agent=agent,
-                input_state=input_state,
-                config=config,
-                last_user_content=last_user_content,
-            ),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-        )
+    # 增量发送：agent 的 messages 为 add_messages 累积语义，会话记忆由
+    # checkpointer 按 thread_id 维护。该 thread 已有记忆时只发本轮新的
+    # 用户消息；空 thread（首次对话/前端带历史导入）才发送全量消息。
+    checkpoint_state = await chat_agent.aget_state(config)
+    if checkpoint_state.values.get("messages"):
+        input_messages = [m for m in lc_messages if isinstance(m, HumanMessage)][-1:]
+        input_messages = input_messages or lc_messages
     else:
-        try:
-            result = await agent.ainvoke(input_state, config=config)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}")
+        input_messages = lc_messages
 
-        messages = result.get("messages", [])
-        if not messages:
-            raise HTTPException(status_code=500, detail="No response from agent")
-        assistant_message = messages[-1]
-        if not isinstance(assistant_message, AIMessage):
-            assistant_message = AIMessage(content=str(assistant_message))
+    # 输入状态
+    input_state = {
+        "messages": input_messages,
+        "model": model_name,
+        "thinking": payload.thinking,
+        "system_prompt": system_prompt,
+    }
 
-        logger.info(f"非流式大模型响应：{assistant_message}")
-
-        # 保存消息
-        if last_user_content:
-            db.add(Message(thread_id=thread_id, role="user", content=last_user_content))
-
-        # 非流式保存 assistant 消息
-        assistant_fields = extract_assistant_message_fields(assistant_message)
-        db.add(Message(thread_id=thread_id, role="assistant", **assistant_fields))
-        db.commit()
-
-        response_data = {
-            "id": str(uuid.uuid4()),
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": model_name or "deepseek-v4-flash",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": assistant_message.content,
-                },
-                "finish_reason": "stop",
-            }],
-            "usage": None,
-        }
-        return response_data
+    # 统一走 SSE 流式输出
+    return StreamingResponse(
+        stream_chat_response(
+            thread_id=thread_id,
+            model=model_name or "deepseek-v4-flash",
+            agent=chat_agent,
+            input_state=input_state,
+            config=config,
+            last_user_content=last_user_content,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )

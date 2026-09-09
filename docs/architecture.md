@@ -30,9 +30,10 @@ v
 | ├── RAG Pipeline |
 | └── Database |
 | |
-| LangGraph 引擎 |
+| LangGraph / create_agent 引擎 |
 | ├── 状态管理 |
-| ├── 节点 (LLM/RAG) |
+| ├── 工具 (tools) |
+| ├── 中间件 (RAG/容灾/路由/流式) |
 | └── 检查点 (Postgres)|
 | |
 v v
@@ -53,9 +54,14 @@ v v
 
 ### 4.2 Agent 编排 (`app/core/langgraph`)
 
-- **状态 (`state.py`)**：定义 `AgentState`，包含消息历史、检索发现、错误记录等。
-- **节点 (`nodes/`)**：可复用的处理单元，如 `llm_call`、`rag_retrieve`。
-- **图 (`graphs/`)**：构建节点间流程，当前为 `START -> rag_retrieve -> llm -> END`。
+- **Agent 工厂 (`agents/chat_agent.py`)**：使用 `langchain.agents.create_agent`
+  构建 Agent（模型 + 工具循环 + 中间件），挂载 checkpointer。
+- **状态 (`state.py`)**：`ChatAgentState` 扩展自 langchain 的 `AgentState`，
+  `messages` 为 `add_messages` 累积语义（会话记忆由 checkpointer 按 thread_id
+  维护），另有请求级字段 `model` / `thinking` / `system_prompt`。
+- **工具 (`tools/`)**：模型可自主调用的工具（当前时间、计算器等）。
+- **中间件 (`middleware/`)**：指标统计、RAG 检索注入、重试与故障转移、
+  按请求路由模型、token 级流式恢复（外层 → 内层次序见 llm-service.md）。
 - **检查点 (`checkpointer.py`)**：使用 `AsyncPostgresSaver` 持久化对话状态，支持多轮上下文。
 
 ### 4.3 服务层 (`app/services`)
@@ -71,21 +77,21 @@ v v
 
 ## 5. 数据流
 
-### 5.1 聊天请求（非流式）
+### 5.1 聊天请求（流式）
 
-1. 客户端发送 `POST /api/v1/chat/{thread_id}`，携带消息历史和可选 `agent_id`。
+1. 客户端发送 `POST /api/v1/chat/{thread_id}`，携带消息历史和可选 `agent_id`，统一以 SSE 流式返回。
 2. 路由验证 JWT 和会话归属。
 3. 若指定 `agent_id`，加载 Agent 配置（系统提示、模型名）。
-4. 构建 `AgentState` 并传入 LangGraph 图。
-5. LangGraph 执行 `rag_retrieve` 节点（检索相关文档）→ `llm_call` 节点（调用 LLM）。
-6. 返回最终助手消息，同时保存用户和助手消息到数据库。
+4. 构建 `ChatAgentState` 输入；增量发送——checkpointer 中该 thread 已有记忆时
+   只发本轮新 user 消息，空 thread 才发全量历史。
+5. Agent 执行：中间件链（指标 → RAG 检索注入 → 重试/容灾 → 模型路由）→
+   模型调用（可进入工具调用循环）。
+6. 通过 `StreamingResponse` 使用 SSE 逐 token 返回。token 增量经
+   `astream(stream_mode=["custom", "messages"])` 的 custom 通道接收
+   （`StreamingMiddleware` 转发，规避 create_agent 回调断链，详见 llm-service.md）。
+7. 在 `finally` 块中保存完整用户和助手消息及元数据（来自 messages 通道的最终 AIMessage）到数据库。
 
-### 5.2 流式聊天
-
-- 与上述类似，但通过 `StreamingResponse` 使用 SSE 逐 token 返回。
-- 在 `finally` 块中保存完整消息和元数据（从 `on_chat_model_end` 事件获取）。
-
-### 5.3 文档上传与 RAG
+### 5.2 文档上传与 RAG
 
 1. 客户端上传文件到 `POST /api/v1/documents/upload`。
 2. 保存临时文件，调用 `ingest_document`。
@@ -94,7 +100,15 @@ v v
 
 ## 6. 关键设计决策
 
-- **状态覆盖 vs 累加**：`messages` 字段采用覆盖方式，由前端传入完整历史；`findings` 等采用累加（`Annotated[list, add]`）。
+- **消息累积 + checkpointer 记忆**：`messages` 采用 `add_messages` 累积语义，
+  会话记忆由 checkpointer 按 thread_id 维护；chat.py 增量发送（有记忆只发本轮
+  新 user 消息，空 thread 发全量），前端契约不变。
+- **create_agent + 中间件**：Agent 主体为 `langchain.agents.create_agent`，
+  RAG 注入、容灾重试、模型路由、指标、流式恢复全部以中间件实现，
+  横切能力可插拔（详见 llm-service.md）。
+- **token 流式 workaround**：create_agent（langchain 1.3）模型调用不透传
+  config 导致回调断链（[langchain#37869](https://github.com/langchain-ai/langchain/issues/37869)），
+  由 `StreamingMiddleware` 经 custom 流恢复，上游修复后可移除。
 - **异步 Checkpointer**：使用 `AsyncPostgresSaver` 以支持异步图执行，避免阻塞事件循环。
 - **多模型容灾**：`LLMRegistry` 实现简单轮询，结合 `tenacity` 重试机制。
 - **完整元数据存储**：消息表包含 JSONB 列，保存所有原始响应信息，便于审计和分析。
@@ -102,8 +116,11 @@ v v
 
 ## 7. 扩展点
 
-- **工具调用**：在 `nodes/` 中添加工具调用节点，并扩展状态。
-- **多 Agent 协作**：使用 LangGraph 的 supervisor 模式。
+- **工具调用**：在 `app/core/langgraph/tools/` 添加工具并加入 `tools` 列表，
+  模型即可自主调用。
+- **中间件**：在 `app/core/langgraph/middleware/` 添加中间件并加入 agent 工厂
+  的 middleware 列表（langchain 官方中间件同样可用）。
+- **多 Agent 协作**：将 create_agent 构建的 agent 作为子图挂入更大的图（supervisor 模式）。
 - **更强大的评估**：集成 LangSmith 或使用 LLM-as-judge。
 - **水平扩展**：使用连接池和分布式任务队列处理文档摄入。
 

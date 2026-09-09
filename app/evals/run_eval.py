@@ -2,7 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 # 导入LangGraph聊天Agent实例
-from app.core.langgraph.graphs import get_chat_agent
+from app.core.langgraph.agents import get_chat_agent
 # 导入三个评估指标函数：正确性、忠实度、相关性
 from app.evals.evaluators.correctness import evaluate_correctness
 from app.evals.evaluators.faithfulness import evaluate_faithfulness
