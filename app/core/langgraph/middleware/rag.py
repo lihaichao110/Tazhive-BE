@@ -26,7 +26,13 @@ class RagMiddleware(AgentMiddleware):
         request: ModelRequest[Any],
         handler: Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]],
     ) -> ModelResponse[Any]:
-        system_prompt = request.state.get("system_prompt") or SYSTEM_CHAT_PROMPT
+        # 外层 dynamic_prompt 中间件已按 state 组装过 system message（含意图协议），
+        # 这里优先复用，只追加参考资料；直接调用（如单测）时退回从 state 组装
+        system_prompt = (
+            request.system_prompt
+            or request.state.get("system_prompt")
+            or SYSTEM_CHAT_PROMPT
+        )
 
         query = self._last_user_text(request.messages)
         findings = await self._retrieve(query) if query else []

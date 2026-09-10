@@ -30,11 +30,11 @@ v
 | ├── RAG Pipeline |
 | └── Database |
 | |
-| LangGraph / create_agent 引擎 |
-| ├── 状态管理 |
-| ├── 工具 (tools) |
-| ├── 中间件 (RAG/容灾/路由/流式) |
-| └── 检查点 (Postgres)|
+| LangGraph Supervisor |
+| ├── intent_node (LLM 分类) |
+| ├── conditional edges (注册表生成) |
+| ├── 意图 create_agent 子图 |
+| └── 外层检查点 (Postgres)|
 | |
 v v
 [PostgreSQL] <------ [pgvector 扩展]
@@ -54,8 +54,12 @@ v v
 
 ### 4.2 Agent 编排 (`app/core/langgraph`)
 
-- **Agent 工厂 (`agents/chat_agent.py`)**：使用 `langchain.agents.create_agent`
-  构建 Agent（模型 + 工具循环 + 中间件），挂载 checkpointer。
+- **Supervisor (`graph/supervisor.py`)**：显式 `StateGraph`，先识别意图，再通过
+  注册表生成的 conditional edges 路由到对应子 Agent。
+- **意图注册表 (`intent/registry.py`)**：声明意图 id、分类描述/示例、响应协议、
+  RAG 开关和可选工具，是分类与路由的共同数据源。
+- **Agent 工厂 (`agents/factory.py`)**：为每个意图构建独立 `create_agent` 子图；
+  checkpointer 仅挂外层 supervisor。
 - **状态 (`state.py`)**：`ChatAgentState` 扩展自 langchain 的 `AgentState`，
   `messages` 为 `add_messages` 累积语义（会话记忆由 checkpointer 按 thread_id
   维护），另有请求级字段 `model` / `thinking` / `system_prompt`。
@@ -84,12 +88,14 @@ v v
 3. 若指定 `agent_id`，加载 Agent 配置（系统提示、模型名）。
 4. 构建 `ChatAgentState` 输入；增量发送——checkpointer 中该 thread 已有记忆时
    只发本轮新 user 消息，空 thread 才发全量历史。
-5. Agent 执行：中间件链（指标 → RAG 检索注入 → 重试/容灾 → 模型路由）→
-   模型调用（可进入工具调用循环）。
-6. 通过 `StreamingResponse` 使用 SSE 逐 token 返回。token 增量经
-   `astream(stream_mode=["custom", "messages"])` 的 custom 通道接收
+5. `intent_node` 使用 flash 模型结构化分类；超时或异常兜底为 `general`，并
+   通过 custom 流发送 intent 事件。
+6. conditional edges 路由到对应意图 Agent。四个共享横切中间件固定为
+   Metrics → Resilience → ModelRouting → Streaming；仅 `general` 额外挂 RAG。
+7. 通过 `StreamingResponse` 使用 SSE 逐 token 返回。token 增量经
+   `astream(stream_mode=["custom", "messages"], subgraphs=True)` 的 custom 通道接收
    （`StreamingMiddleware` 转发，规避 create_agent 回调断链，详见 llm-service.md）。
-7. 在 `finally` 块中保存完整用户和助手消息及元数据（来自 messages 通道的最终 AIMessage）到数据库。
+8. 在 `finally` 块中保存完整用户和助手消息及元数据（来自子图 model 节点）到数据库。
 
 ### 5.2 文档上传与 RAG
 
@@ -104,8 +110,9 @@ v v
   会话记忆由 checkpointer 按 thread_id 维护；chat.py 增量发送（有记忆只发本轮
   新 user 消息，空 thread 发全量），前端契约不变。
 - **create_agent + 中间件**：Agent 主体为 `langchain.agents.create_agent`，
-  RAG 注入、容灾重试、模型路由、指标、流式恢复全部以中间件实现，
-  横切能力可插拔（详见 llm-service.md）。
+  每个意图管线自包含；业务扩展走注册表，四个共享横切中间件不随意图增长。
+- **显式意图路由**：意图到处理节点的映射是 Studio 可视化的 conditional
+  edges，不隐藏在中间件分支中；未知意图统一回退 `general`。
 - **token 流式 workaround**：create_agent（langchain 1.3）模型调用不透传
   config 导致回调断链（[langchain#37869](https://github.com/langchain-ai/langchain/issues/37869)），
   由 `StreamingMiddleware` 经 custom 流恢复，上游修复后可移除。

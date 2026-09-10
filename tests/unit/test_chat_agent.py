@@ -238,7 +238,9 @@ async def test_streaming_tokens_via_custom_stream():
                     }
                 ],
             ),
-            AIMessage(content="答案是 5"),
+            AIMessage(
+                content='{"content":"答案是 5","charts":[]}',
+            ),
         ]
     )
     agent = _build_agent(model)
@@ -260,8 +262,9 @@ async def test_streaming_tokens_via_custom_stream():
                 final_message = chunk
 
     # token 级增量（工具调用轮的空 chunk 应被过滤）
-    assert "".join(tokens) == "答案是 5"
+    expected_response = '{"content":"答案是 5","charts":[]}'
+    assert "".join(tokens) == expected_response
     # 完整消息含工具调用中间轮 + 最终回复，最后一条是最终回复
     assert final_message is not None
-    assert final_message.content == "答案是 5"
+    assert final_message.content == expected_response
     assert not final_message.tool_calls

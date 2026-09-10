@@ -1,8 +1,8 @@
 import asyncio
 import json
 from pathlib import Path
-# 导入LangGraph聊天Agent实例
-from app.core.langgraph.agents import get_chat_agent
+# 导入LangGraph supervisor图实例
+from app.core.langgraph.graph import get_supervisor_graph
 # 导入三个评估指标函数：正确性、忠实度、相关性
 from app.evals.evaluators.correctness import evaluate_correctness
 from app.evals.evaluators.faithfulness import evaluate_faithfulness
@@ -18,8 +18,8 @@ async def run_evaluation(dataset_path: str):
     with open(dataset_path, "r", encoding="utf-8") as f:
         samples = [json.loads(line) for line in f]
 
-    # 初始化LangGraph聊天Agent实例
-    agent = await get_chat_agent()
+    # 初始化LangGraph supervisor图实例
+    agent = await get_supervisor_graph()
 
     # 初始化分数存储字典，保存每个指标所有样本得分
     scores = {"correctness": [], "faithfulness": [], "relevance": []}

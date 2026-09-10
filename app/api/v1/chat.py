@@ -8,13 +8,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from langchain_core.runnables import RunnableConfig
 from sqlmodel import Session
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+    message_chunk_to_message,
+)
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.thread import Thread
 from app.models.message import Message
 from app.schemas.chat import ChatRequest
-from app.core.langgraph.agents import get_chat_agent
+from app.core.langgraph.graph import get_supervisor_graph
 from app.services.database import engine
 from app.models.agent import Agent
 from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
@@ -78,6 +85,16 @@ def _extract_text_from_content(content) -> str:
         return "".join(text_parts)
     return ""
 
+
+def _is_model_node(meta: dict) -> bool:
+    """判断 messages 流事件是否来自子 Agent 的模型节点。
+
+    supervisor 化后模型节点位于子图内，langgraph_node 可能是子图内部
+    节点名（"model"）或带命名空间前缀（如 "general_node:xxx:model"）。
+    """
+    node = str(meta.get("langgraph_node") or "")
+    return node == "model" or node.endswith(":model")
+
 async def stream_chat_response(
     thread_id: str,
     model: str,
@@ -96,12 +113,19 @@ async def stream_chat_response(
     final_message = None  # 在循环外初始化，确保 finally 中可访问
     try:
         logger.info(f"流式响应开始：{config}")
-        async for mode, payload in agent.astream(
-            input_state, config=config, stream_mode=["custom", "messages"]
+        async for _namespace, mode, payload in agent.astream(
+            input_state,
+            config=config,
+            stream_mode=["custom", "messages"],
+            subgraphs=True,
         ):
             if mode == "custom":
-                # StreamingMiddleware 转发的 AIMessageChunk 增量
                 chunk = payload
+                if isinstance(chunk, dict):
+                    # intent_node 广播的意图事件，作为独立 SSE 帧透传给前端
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                    continue
+                # StreamingMiddleware 转发的 AIMessageChunk 增量
                 delta_content = _extract_text_from_content(chunk.content)
                 # 2. 提取思考推理delta（DeepSeek‑R1等推理模型）
                 delta_reasoning: str | None = chunk.additional_kwargs.get("reasoning_content")
@@ -125,11 +149,15 @@ async def stream_chat_response(
                     }
                     yield f"data: {json.dumps(chunk_data)}\n\n"
             else:
-                # messages 流：取模型节点产出的完整消息（工具循环的中间消息
-                # 会被后续消息覆盖），工具结果 ToolMessage 不需要
+                # messages 流：取子 Agent 模型节点产出的完整消息（工具循环的
+                # 中间消息会被后续消息覆盖），工具结果 ToolMessage 不需要
                 chunk, meta = payload
-                if isinstance(chunk, AIMessage) and meta.get("langgraph_node") == "model":
-                    final_message = chunk
+                if _is_model_node(meta):
+                    if isinstance(chunk, AIMessageChunk):
+                        # 子图 messages 流给出聚合后的最终 chunk，转换为可落库消息。
+                        final_message = message_chunk_to_message(chunk)
+                    elif isinstance(chunk, AIMessage):
+                        final_message = chunk
     except Exception as e:
         # 模型彻底调用失败等异常直接向上抛出，这里统一转成 SSE error 帧，
         # 前端才能看到错误而不是只收到 [DONE]
@@ -185,18 +213,19 @@ async def chat(
             last_user_content = msg.get("content")
             break
 
-    # 获取对话 Agent（create_agent 构建的编译图）
-    chat_agent = await get_chat_agent()
+    # 获取 supervisor 图（意图识别 + 按注册表路由子 Agent）
+    supervisor = await get_supervisor_graph()
 
-    # 默认值
+    # 默认值：基础身份提示词（协议片段由目标意图 Agent 按需拼接）
     system_prompt = SYSTEM_CHAT_PROMPT
     model_name = payload.model
 
-    # 如果指定了 agent_id，则加载 Agent 配置（注意与上面的 chat_agent 区分）
+    # 如果指定了 agent_id，则加载 Agent 配置（注意与上面的 supervisor 区分）
     if payload.agent_id:
         agent_config = db.get(Agent, payload.agent_id)
         if not agent_config or agent_config.user_id != current_user.id:
             raise HTTPException(status_code=404, detail="找不到对应的 Agent")
+        # 自定义 Agent 的提示词作为基础提示词，意图协议由目标 Agent 拼接
         if agent_config.system_prompt:
             system_prompt = agent_config.system_prompt
         if not payload.model and agent_config.model:
@@ -208,10 +237,10 @@ async def chat(
         "callbacks": [langfuse_handler]
     }
 
-    # 增量发送：agent 的 messages 为 add_messages 累积语义，会话记忆由
+    # 增量发送：图的 messages 为 add_messages 累积语义，会话记忆由
     # checkpointer 按 thread_id 维护。该 thread 已有记忆时只发本轮新的
     # 用户消息；空 thread（首次对话/前端带历史导入）才发送全量消息。
-    checkpoint_state = await chat_agent.aget_state(config)
+    checkpoint_state = await supervisor.aget_state(config)
     if checkpoint_state.values.get("messages"):
         input_messages = [m for m in lc_messages if isinstance(m, HumanMessage)][-1:]
         input_messages = input_messages or lc_messages
@@ -231,7 +260,7 @@ async def chat(
         stream_chat_response(
             thread_id=thread_id,
             model=model_name or "deepseek-v4-flash",
-            agent=chat_agent,
+            agent=supervisor,
             input_state=input_state,
             config=config,
             last_user_content=last_user_content,

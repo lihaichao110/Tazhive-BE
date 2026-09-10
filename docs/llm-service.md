@@ -15,13 +15,16 @@ LLM 服务负责管理与大语言模型的交互，支持多提供商、多模�
 - 支持轮询（`rotate()`），用于故障切换。
 - 模型实例缓存（按 model_name + thinking 组合键），避免重复创建实例。
 
-### Agent 工厂 (`app/core/langgraph/agents/chat_agent.py`)
+### Supervisor 与意图 Agent 工厂
 
-- `create_agent(base_model, tools, middleware, state_schema, checkpointer)` 构建 Agent。
-- 基础模型经 `init_chat_model`（LLMRegistry）创建后传入；每次调用实际使用的
-  模型由 `ModelRoutingMiddleware` 按 state 覆盖（支持按请求选模型/思考模式）。
-- 工具真正挂载（`app/core/langgraph/tools/`），模型可自主调用并进入工具循环。
-- 后续扩展：往 `tools` 列表加工具，或往 `middleware` 列表加中间件。
+- `graph/supervisor.py` 用手写 `StateGraph` 建立显式路由：`intent_node` 分类后，
+  通过 conditional edges 进入注册表对应的 `<intent>_node`。
+- `intent/registry.py` 是意图、分类描述、示例、响应协议、RAG 开关和工具集的
+  唯一映射源；图节点与分类 prompt 均从注册表动态生成。
+- `agents/factory.py` 为每个 `IntentSpec` 构建独立 `create_agent` 子图，并在
+  模型调用前把请求级基础提示词与该意图协议组合。
+- checkpointer 仅挂在外层 supervisor；子 Agent 继承同一个 `thread_id` 上下文。
+- `agents/chat_agent.py` 只保留旧 `get_chat_agent()` 导入的兼容封装。
 
 ### 中间件 (`app/core/langgraph/middleware/`)
 
@@ -30,10 +33,13 @@ LLM 服务负责管理与大语言模型的交互，支持多提供商、多模�
 | 中间件 | 职责 |
 | --- | --- |
 | `MetricsMiddleware` | 成功调用后统计 Prometheus 指标（调用次数 / token 用量） |
-| `RagMiddleware` | 每轮模型调用前检索 top-5 并重排，以“参考资料”注入 system message |
 | `ResilienceMiddleware` | tenacity 指数退避重试；每次失败 `registry.rotate()` 故障转移 |
 | `ModelRoutingMiddleware` | 每次调用按 state（model / thinking）经 registry 解析模型实例 |
 | `StreamingMiddleware` | 恢复 token 级流式（见下） |
+
+以上四个横切中间件为模块级单例并由所有意图 Agent 复用。`RagMiddleware`
+只负责“检索 + 注入”，仅在 `IntentSpec.use_rag=True` 的 Agent 中挂载；当前为
+`general`，位置在 Metrics 内、Resilience 外，重试不会重复检索。
 
 `ResilienceMiddleware` 在重试时会重新经过内层的 `ModelRoutingMiddleware`，
 因此 rotate 切换的模型在下一次尝试立即生效。
@@ -51,10 +57,15 @@ RunnableConfig**，导致 `on_chat_model_stream` 回调、`get_config()`、
 2. 用流式 tap 包装模型：内部改用 `astream` 消费，每个 chunk 通过
    `stream_writer` 发到 **custom 流**，聚合后返回完整消息（tool_calls 保留）。
 
-因此 `chat.py` 的流式接口使用 `astream(stream_mode=["custom", "messages"])`：
+因此 `chat.py` 的流式接口使用
+`astream(stream_mode=["custom", "messages"], subgraphs=True)`。启用
+`subgraphs=True` 是必要条件：否则子 Agent 的 custom token 不会冒泡，messages
+事件也只会显示外层意图节点。
 
 - `custom` 通道：token 级增量（content + reasoning_content），转 SSE；
 - `messages` 通道：完整消息（含 tool_calls / usage_metadata），用于落库。
+- `intent_node` 还会向 `custom` 通道发送
+  `{"type":"intent","intent":"...","confidence":...}`，API 原样转成 SSE 帧。
 
 上游修复后（模型节点透传 config），`StreamingMiddleware` 可直接从
 middleware 列表移除，`chat.py` 的接收逻辑无需变化。
@@ -66,11 +77,17 @@ middleware 列表移除，`chat.py` 的接收逻辑无需变化。
 3. 使用 `tenacity` 进行指数退避重试（最多 3 次尝试）。
 4. 若所有尝试均失败，异常向上冒泡（接口返回 500 / SSE error 帧）。
 
-## 扩展指南
+## 添加新意图
 
-- 添加工具：在 `app/core/langgraph/tools/` 新增并加入 `tools` 列表。
-- 添加中间件：在 `app/core/langgraph/middleware/` 新增并加入 agent 工厂的
-  middleware 列表（注意顺序语义：靠前为外层）。
+在 `intent/registry.py` 的 `INTENT_SPECS` 新增一条 `IntentSpec`，填写 id、分类
+描述与示例、协议提示词、`use_rag` 和可选工具集。分类 prompt、子 Agent 节点和
+conditional edge 会自动生成；无需修改 supervisor 或增加横切中间件。若该意图
+未来需要事务流程，可把对应节点扩为专属子图，其他意图不受影响。
+
+其他扩展：
+
+- 添加默认工具：在 `app/core/langgraph/tools/` 新增并加入 `tools` 列表；某个
+  意图的专用工具直接配置在它的 `IntentSpec.tools`。
 - 添加新提供商：在 `_create_model` 中根据模型名或配置选择不同 `model_provider`。
 - 添加 API Key 管理：可在配置中增加多个密钥，按模型分配。
 - 官方中间件（`langchain.agents.middleware`）也开箱可用，如
