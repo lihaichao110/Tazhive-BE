@@ -7,17 +7,14 @@
                                                              ├─ chart_analysis_node ─→ END
                                                              └─ insurance_node ─→ END
 
-intent_node 每轮请求执行一次：调分类器 → 写 state.intent → 通过
-stream_writer 向前端广播意图事件。协议拼接由各意图 Agent 管线负责。
+intent_node 每轮请求执行一次：调分类器 → 写 state.intent → 路由。
+协议拼接由各意图 Agent 管线负责。
 各子 Agent 节点是 create_agent 编译图（agents/factory.py 构建），直接挂载
 为图节点以保留其内部 token 流（custom 事件沿子图冒泡到顶层 astream）。
 """
 
 from langchain_core.messages import HumanMessage
-from langchain_core.runnables import RunnableConfig
-from langchain_core.runnables.config import var_child_runnable_config
-from langgraph.config import CONFIG_KEY_RUNTIME
-from langgraph.constants import CONF, END, START
+from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 
 from app.core.langgraph.agents.factory import build_intent_agent
@@ -27,7 +24,6 @@ from app.core.langgraph.intent.classifier import (
     get_intent_classifier,
 )
 from app.core.langgraph.intent.registry import get_intent_spec, iterate_intent_specs
-from app.core.langgraph.middleware.streaming import _ensure_config_context
 from app.core.langgraph.state import ChatAgentState
 from app.core.logging import logger
 
@@ -43,39 +39,13 @@ def _last_user_text(messages: list) -> str | None:
     return None
 
 
-def _broadcast(writer, payload: dict) -> None:
-    """向顶层 custom 流广播事件；Python 3.10 下需先补 config contextvar
-    （writer 内部会 get_config 取 checkpoint_ns，与 StreamingMiddleware 注释的
-    是同一处上游断链，详见 streaming.py）。"""
-    token = _ensure_config_context()
-    try:
-        if writer is not None:
-            writer(payload)
-    except Exception:
-        pass
-    finally:
-        if token is not None:
-            var_child_runnable_config.reset(token)
-
-
 def make_intent_node(classifier: IntentClassifier):
-    """构建 intent_node：分类、归一化并广播意图事件。"""
+    """构建 intent_node：分类、归一化并写入路由状态。"""
 
-    async def intent_node(state: SupervisorState, config: RunnableConfig) -> dict:
+    async def intent_node(state: SupervisorState) -> dict:
         text = _last_user_text(state.get("messages") or [])
         result = await classifier.classify(text or "")
         spec = get_intent_spec(result.intent)
-
-        # 意图事件尽力广播（ainvoke 等非流式调用下没有 writer，忽略即可）
-        runtime = config.get(CONF, {}).get(CONFIG_KEY_RUNTIME)
-        _broadcast(
-            getattr(runtime, "stream_writer", None),
-            {
-                "type": "intent",
-                "intent": spec.id,
-                "confidence": result.confidence,
-            },
-        )
 
         logger.info(f"意图识别：{spec.id}（confidence={result.confidence}）")
         return {

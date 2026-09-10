@@ -1,4 +1,4 @@
-"""supervisor 图测试：意图路由、协议拼接、意图事件广播、子图流式与记忆。
+"""supervisor 图测试：意图路由、协议拼接、子图流式与记忆。
 
 使用脚本式假模型避免真实 LLM 调用；关键验证点是子 Agent（create_agent
 编译图）作为图节点挂载后，token 流（custom）与完整消息（messages）能否
@@ -210,12 +210,11 @@ async def test_default_base_prompt_when_state_missing():
 
 
 @pytest.mark.asyncio
-async def test_intent_event_and_tokens_stream_to_top_level():
-    """SSE 数据源契约：意图事件（dict）与 token 增量（chunk）都从子图冒泡到顶层 custom 流，
+async def test_tokens_stream_to_top_level():
+    """SSE 数据源契约：token 增量从子图冒泡到顶层 custom 流，
     完整消息出现在 messages 流且能被 chat.py 的模型节点过滤命中。"""
     graph, models, _ = _build_supervisor("insurance")
 
-    intent_events = []
     token_text = ""
     final_message = None
     ai_node_names = set()
@@ -228,10 +227,7 @@ async def test_intent_event_and_tokens_stream_to_top_level():
     ):
         namespaces.add(namespace)
         if mode == "custom":
-            if isinstance(payload, dict):
-                intent_events.append(payload)
-            else:
-                token_text += payload.content if isinstance(payload.content, str) else ""
+            token_text += payload.content if isinstance(payload.content, str) else ""
         else:
             chunk, meta = payload
             if isinstance(chunk, (AIMessage, AIMessageChunk)):
@@ -243,9 +239,6 @@ async def test_intent_event_and_tokens_stream_to_top_level():
                         else chunk
                     )
 
-    assert intent_events == [
-        {"type": "intent", "intent": "insurance", "confidence": 0.9}
-    ]
     assert token_text == "reply-from-insurance"
     assert final_message is not None
     assert final_message.content == "reply-from-insurance"
@@ -313,7 +306,7 @@ async def test_chat_sse_unpacks_subgraph_events_and_persists_final_message(monke
         for frame in frames
         if frame.startswith("data: {")
     ]
-    assert any(item.get("type") == "intent" and item["intent"] == "insurance" for item in payloads)
+    assert not any(item.get("type") == "intent" for item in payloads)
     token_text = "".join(
         item["choices"][0]["delta"].get("content", "")
         for item in payloads

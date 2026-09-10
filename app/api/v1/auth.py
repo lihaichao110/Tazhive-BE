@@ -4,10 +4,12 @@ from app.api.deps import get_db
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.models.user import User
 from app.schemas.auth import UserRegister, UserLogin, TokenResponse
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=TokenResponse)
+@limiter.limit("5/minute")
 def register(payload: UserRegister, db: Session = Depends(get_db)):
     # 检查用户名或邮箱是否已存在
     existing = db.exec(
@@ -31,6 +33,7 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
     return TokenResponse(access_token=token)
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 def login(payload: UserLogin, db: Session = Depends(get_db)):
     # 查找用户
     user: User | None = db.exec(select(User).where(User.username == payload.username)).first()

@@ -26,6 +26,7 @@ from app.services.database import engine
 from app.models.agent import Agent
 from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
 from langfuse.langchain import CallbackHandler
+from app.core.limiter import limiter
 
 logger = getLogger(__name__)
 
@@ -121,10 +122,6 @@ async def stream_chat_response(
         ):
             if mode == "custom":
                 chunk = payload
-                if isinstance(chunk, dict):
-                    # intent_node 广播的意图事件，作为独立 SSE 帧透传给前端
-                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-                    continue
                 # StreamingMiddleware 转发的 AIMessageChunk 增量
                 delta_content = _extract_text_from_content(chunk.content)
                 # 2. 提取思考推理delta（DeepSeek‑R1等推理模型）
@@ -190,6 +187,7 @@ async def stream_chat_response(
             session.commit()
 
 @router.post("/chat/{thread_id}", response_model=None)
+@limiter.limit("20/minute")
 async def chat(
     thread_id: str,
     payload: ChatRequest,

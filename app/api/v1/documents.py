@@ -12,10 +12,12 @@ from app.models.document import Document
 from app.services.rag.pipeline import ingest_document
 from app.schemas.document import DocumentUploadResponse, DocumentRead
 from app.core.logging import logger
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 @router.post("/upload", response_model=DocumentUploadResponse)
+@limiter.limit("10/minute")
 async def upload_document(
     files: UploadFile = File(...),
     current_user: User = Depends(get_current_user),

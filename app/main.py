@@ -5,6 +5,9 @@ from app.core.middleware import RequestLoggingMiddleware
 from contextlib import asynccontextmanager
 from app.core.logging import logger
 from app.observability.metrics import metrics_endpoint
+from app.core.limiter import limiter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 
 # 启动时日志（可选）
@@ -25,6 +28,10 @@ app = FastAPI(
     description="FastAPI",
     lifespan=lifespan
 )
+
+# 限流器必须挂载到 app.state，slowapi 依赖它
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # 添加请求日志中间件
 app.add_middleware(RequestLoggingMiddleware)
