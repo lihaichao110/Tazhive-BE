@@ -22,6 +22,9 @@ from app.core.logging import logger
 INTENT_MODEL_NAME = "deepseek-v4-flash"
 """分类用的轻量模型（LLMRegistry 注册列表内的低档位模型）。"""
 
+INTENT_MODEL_THINKING = {"type": "disabled"}
+"""意图分类无需深度推理；关闭 thinking，避免与结构化输出能力冲突。"""
+
 CLASSIFY_TIMEOUT_SECONDS = 8.0
 """单次分类调用的超时时间；超时直接兜底，不重试。"""
 
@@ -57,7 +60,9 @@ class IntentClassifier:
         model: BaseChatModel,
         timeout_seconds: float = CLASSIFY_TIMEOUT_SECONDS,
     ):
-        self._structured = model.with_structured_output(IntentResult)
+        # DeepSeek 的 thinking 模式不支持 function_calling 默认附带的 tool_choice。
+        # 使用 JSON Mode 获取结构化结果，避免把分类任务伪装成工具调用。
+        self._structured = model.with_structured_output(IntentResult, method="json_mode")
         self._timeout_seconds = timeout_seconds
 
     async def classify(self, text: str) -> IntentResult:
@@ -92,6 +97,10 @@ def get_intent_classifier() -> IntentClassifier:
     if _classifier is None:
         from app.services.llm.registry import default_registry
 
-        model = default_registry.get_model(INTENT_MODEL_NAME)
+        # 分类模型固定关闭 thinking；用户为主对话选择的 thinking 模式不受影响。
+        model = default_registry.get_model(
+            INTENT_MODEL_NAME,
+            thinking=INTENT_MODEL_THINKING,
+        )
         _classifier = IntentClassifier(model=model)
     return _classifier

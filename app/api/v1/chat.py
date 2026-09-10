@@ -4,7 +4,7 @@ import uuid
 from typing import AsyncGenerator
 
 from logging import getLogger
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.runnables import RunnableConfig
 from sqlmodel import Session
@@ -189,11 +189,13 @@ async def stream_chat_response(
 @router.post("/chat/{thread_id}", response_model=None)
 @limiter.limit("20/minute")
 async def chat(
+    request: Request,
     thread_id: str,
     payload: ChatRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # slowapi 通过 request 获取客户端信息并执行限流。
     # 验证线程归属
     thread = db.get(Thread, thread_id)
     if not thread or thread.user_id != current_user.id:

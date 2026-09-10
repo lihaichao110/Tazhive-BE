@@ -19,9 +19,11 @@ class FakeStructuredModel:
         self.delay = delay
         self.exc = exc
         self.calls = []
+        self.structured_output_method = None
 
-    def with_structured_output(self, schema):
+    def with_structured_output(self, schema, *, method=None):
         self.schema = schema
+        self.structured_output_method = method
         return self
 
     async def ainvoke(self, messages):
@@ -49,6 +51,7 @@ async def test_classify_returns_structured_result():
     assert result.intent == "insurance"
     assert result.confidence == 0.88
     assert len(model.calls) == 1
+    assert model.structured_output_method == "json_mode"
 
 
 @pytest.mark.asyncio

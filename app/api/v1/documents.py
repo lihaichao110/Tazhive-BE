@@ -2,7 +2,7 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from sqlmodel import Session
 from typing import List
 from app.api.deps import get_db, get_current_user
@@ -19,10 +19,12 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 @router.post("/upload", response_model=DocumentUploadResponse)
 @limiter.limit("10/minute")
 async def upload_document(
+    request: Request,
     files: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # slowapi 通过 request 获取客户端信息并执行限流。
     if not files:
         raise HTTPException(status_code=400, detail="没有上传任何文件")
 

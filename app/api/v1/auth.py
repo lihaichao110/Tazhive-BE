@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlmodel import Session, select
 from app.api.deps import get_db
 from app.core.security import verify_password, get_password_hash, create_access_token
@@ -10,7 +10,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=TokenResponse)
 @limiter.limit("5/minute")
-def register(payload: UserRegister, db: Session = Depends(get_db)):
+def register(request: Request, payload: UserRegister, db: Session = Depends(get_db)):
+    # slowapi 通过 request 获取客户端信息并执行限流。
     # 检查用户名或邮箱是否已存在
     existing = db.exec(
         select(User).where((User.username == payload.username) | (User.email == payload.email))
@@ -34,7 +35,8 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
-def login(payload: UserLogin, db: Session = Depends(get_db)):
+def login(request: Request, payload: UserLogin, db: Session = Depends(get_db)):
+    # slowapi 通过 request 获取客户端信息并执行限流。
     # 查找用户
     user: User | None = db.exec(select(User).where(User.username == payload.username)).first()
     if not user or not verify_password(payload.password, user.hashed_password):
