@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.models.user import User
 from app.models.document import Document
 from app.services.rag.pipeline import ingest_document
+from app.services.rag.loader import DocumentParseError
 from app.schemas.document import DocumentUploadResponse, DocumentRead
 from app.core.logging import logger
 from app.core.limiter import limiter
@@ -29,7 +30,7 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="没有上传任何文件")
 
     # 1. 验证文件类型（可选）
-    allowed_extensions = {".txt", ".md", ".pdf", ".docx"}
+    allowed_extensions = {".txt", ".md", ".pdf", ".docx", ".xlsx"}
 
     # 2. 保存上传文件到临时目录
     upload_dir = Path(settings.upload_dir)
@@ -70,6 +71,9 @@ async def upload_document(
             status=doc.status,
             chunk_count=doc.chunk_count,
         )
+    except DocumentParseError as e:
+        logger.warning(f"文档内容无效: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"文档摄入失败: {e}")
         raise HTTPException(status_code=500, detail=f"文档处理失败: {str(e)}")

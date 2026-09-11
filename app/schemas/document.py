@@ -21,7 +21,7 @@ class DocumentRead(BaseModel):
     filename: str
     """文件原始名称"""
     file_type: str
-    """文件后缀类型，如 pdf / docx / md"""
+    """文件后缀类型，如 pdf / docx / md / txt / xlsx"""
     status: str
     """文档解析处理状态"""
     chunk_count: int

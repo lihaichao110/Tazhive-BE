@@ -99,7 +99,7 @@ v v
 
 ### 5.2 文档上传与 RAG
 
-1. 客户端上传文件到 `POST /api/v1/documents/upload`。
+1. 客户端上传文件到 `POST /api/v1/documents/upload`，支持 `.txt`、`.md`、`.pdf`、`.docx` 和 `.xlsx`。
 2. 保存临时文件，调用 `ingest_document`。
 3. 加载文件内容，分块，生成嵌入，存入 `document_chunks` 表（pgvector）。
 4. 返回处理状态。

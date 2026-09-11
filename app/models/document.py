@@ -17,12 +17,12 @@ class Document(BaseModel, table=True):
         )
     )
 
-    # 文件类型，限定pdf / docx / md / txt
+    # 文件类型，当前支持 pdf / docx / md / txt / xlsx
     file_type: str = Field(
         sa_column=Column(
             String(50),
             nullable=False,
-            comment="文件类型：pdf / docx / md / txt"
+            comment="文件类型：pdf / docx / md / txt / xlsx"
         )
     )
 
