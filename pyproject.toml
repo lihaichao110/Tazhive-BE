@@ -46,6 +46,7 @@ dependencies = [
     "opentelemetry-sdk>=1.44.0",
     "opentelemetry-instrumentation-fastapi>=0.65b0",
     "langgraph-checkpoint-sqlite>=3.1.1",
+    "langchain-tavily>=0.2.18",
 ]
 authors = [
     { name = "lihaichao", email = "17645103861@163.com" },

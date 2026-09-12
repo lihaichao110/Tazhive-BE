@@ -1,3 +1,5 @@
+from typing import Any
+
 from typing_extensions import NotRequired
 
 from langchain.agents import AgentState
@@ -24,3 +26,16 @@ class ChatAgentState(AgentState):
 
     intent_confidence: NotRequired[float]
     """意图分类置信度（0~1），目前仅随 SSE 广播给前端，不做控制"""
+
+
+class SearchAgentState(ChatAgentState):
+    """搜索子图内部状态；父级 Supervisor 只接收双方共有的字段。"""
+
+    search_plan: NotRequired[dict[str, Any]]
+    """规划器生成的结构化 Tavily 查询参数。"""
+
+    search_results: NotRequired[list[dict[str, str]]]
+    """去重、截断后的搜索结果，仅供本轮回答模型使用。"""
+
+    search_error: NotRequired[str | None]
+    """搜索不可用或失败时提供给回答模型的安全错误说明。"""

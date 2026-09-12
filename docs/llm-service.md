@@ -99,3 +99,4 @@ conditional edge 会自动生成；无需修改 supervisor 或增加横切中间
 - `ANTHROPIC_API_KEY`：Anthropic API 密钥（预留）。
 - `QWEN_API_KEY`：通义千问 API 密钥（预留）。
 - `DEEPSEEK_API_KEY`：DeepSeek API 密钥（当前 registry 默认提供商）。
+- `TAVILY_API_KEY`：Tavily 联网搜索密钥；为空时仅禁用搜索调用。

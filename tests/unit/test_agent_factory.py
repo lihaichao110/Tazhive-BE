@@ -1,4 +1,5 @@
 """build_intent_agent 单元测试：按意图组装工具与中间件链。"""
+
 from langchain_core.language_models.fake_chat_models import FakeChatModel
 
 from app.core.langgraph.agents.factory import (
@@ -7,6 +8,7 @@ from app.core.langgraph.agents.factory import (
     _shared_model_routing,
     _shared_resilience,
     _shared_streaming,
+    build_agent_for_intent,
     build_intent_agent,
 )
 from app.core.langgraph.intent.registry import get_intent_spec
@@ -44,6 +46,27 @@ def test_general_chain_mounts_rag_between_metrics_and_resilience():
     assert isinstance(chain[3], ResilienceMiddleware)
     assert isinstance(chain[4], ModelRoutingMiddleware)
     assert isinstance(chain[5], StreamingMiddleware)
+
+
+def test_search_chain_has_only_search_specific_tools_and_no_rag():
+    spec = get_intent_spec("search")
+    chain = _build_middleware_chain(spec)
+
+    assert not any(isinstance(mw, RagMiddleware) for mw in chain)
+    assert spec.tools is not None
+    assert [tool.name for tool in spec.tools] == [
+        "tavily_search",
+        "get_current_time",
+        "calculator",
+    ]
+
+
+def test_search_intent_uses_deterministic_search_subgraph():
+    graph = build_agent_for_intent(get_intent_spec("search"))
+
+    assert {"search_plan_node", "tavily_node", "search_answer_node"} <= set(
+        graph.get_graph().nodes
+    )
 
 
 def test_shared_middleware_singletons_reused_across_intents():

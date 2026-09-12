@@ -1,8 +1,9 @@
 """按意图配置构建子 Agent 的工厂。
 
-每个意图一个 create_agent 实例：工厂把请求级基础提示词与该意图的协议拼接，
-并按 IntentSpec 组装工具集与中间件链。横切中间件（指标/重试/模型路由/流式）使用模块级单例，
-在所有子 Agent 间共享；RagMiddleware 只挂载到 use_rag 的意图上。
+普通意图使用 create_agent：工厂把请求级基础提示词与该意图的协议拼接，
+并按 IntentSpec 组装工具集与中间件链。search 意图使用专属确定性搜索子图。
+横切中间件（指标/重试/模型路由/流式）使用模块级单例；RagMiddleware
+只挂载到 use_rag 的意图上。
 """
 
 from langchain.agents import create_agent
@@ -39,6 +40,7 @@ def _make_system_prompt_middleware(spec: IntentSpec):
 
     return system_prompt_from_state
 
+
 # 共享横切中间件单例：无状态或仅持有全局 registry，可安全跨 Agent 复用
 _shared_metrics = MetricsMiddleware()
 _shared_resilience = ResilienceMiddleware()
@@ -46,7 +48,9 @@ _shared_model_routing = ModelRoutingMiddleware()
 _shared_streaming = StreamingMiddleware()
 
 
-def _build_middleware_chain(spec: IntentSpec, registry: LLMRegistry | None = None) -> list:
+def _build_middleware_chain(
+    spec: IntentSpec, registry: LLMRegistry | None = None
+) -> list:
     """按意图组装中间件链（列表靠前为外层）。
 
     Metrics → Rag(仅 use_rag) → Resilience → ModelRouting → Streaming；
@@ -85,3 +89,13 @@ def build_intent_agent(
         state_schema=ChatAgentState,
         # checkpointer 挂在 supervisor 外层图上，子 Agent 不单独持久化
     )
+
+
+def build_agent_for_intent(spec: IntentSpec):
+    """按意图选择执行管线；search 使用确定性搜索子图，其余沿用通用 Agent。"""
+    if spec.id == "search":
+        # 延迟导入避免 search 子图复用本模块中间件工厂时产生循环依赖。
+        from app.core.langgraph.agents.search import build_search_agent
+
+        return build_search_agent(spec)
+    return build_intent_agent(spec)

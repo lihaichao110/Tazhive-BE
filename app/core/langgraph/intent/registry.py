@@ -16,7 +16,9 @@ from app.core.langgraph.prompts.system_chat import (
     CHART_ANALYSIS_PROTOCOL_PROMPT,
     CHART_RESPONSE_PROTOCOL_PROMPT,
     INSURANCE_PROTOCOL_PROMPT,
+    SEARCH_PROTOCOL_PROMPT,
 )
+from app.core.langgraph.tools import calculator, get_current_time, tavily_search
 
 DEFAULT_INTENT_ID = "general"
 """兜底意图：分类失败、超时或未注册意图都路由到这里，保证主流程永不中断。"""
@@ -65,6 +67,19 @@ INTENT_SPECS: dict[str, IntentSpec] = {
             ],
             protocol_prompt=CHART_RESPONSE_PROTOCOL_PROMPT,
             use_rag=True,
+        ),
+        IntentSpec(
+            id="search",
+            description="联网搜索与实时信息查询：用户明确要求搜索、查找网络资料，或询问新闻、最新动态、实时数据、当前行情等时效性内容",
+            examples=[
+                "帮我搜索一下今天的人工智能新闻",
+                "查一下这家公司最近有什么新动态",
+                "现在黄金的市场行情怎么样",
+                "请联网核实这个说法是否准确",
+            ],
+            protocol_prompt=SEARCH_PROTOCOL_PROMPT,
+            use_rag=False,
+            tools=[tavily_search, get_current_time, calculator],
         ),
         IntentSpec(
             id="chart_analysis",

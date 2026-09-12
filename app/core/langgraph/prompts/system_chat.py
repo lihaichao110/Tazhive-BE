@@ -5,7 +5,9 @@
 supervisor 图的 intent_node 在路由前拼接到基础提示词之后。
 """
 
-SYSTEM_CHAT_PROMPT = """你叫泰智汇，你是一个有用的人工智能助手。准确、简洁地回答用户的问题。"""
+SYSTEM_CHAT_PROMPT = (
+    """你叫泰智汇，你是一个有用的人工智能助手。准确、简洁地回答用户的问题。"""
+)
 
 CHART_RESPONSE_PROTOCOL_PROMPT = """
 你的最终回答必须是一个合法 JSON 对象，不能使用 Markdown JSON 代码围栏，也不能在 JSON 前后添加说明。格式固定为：
@@ -24,6 +26,16 @@ CHART_ANALYSIS_PROTOCOL_PROMPT = f"""{CHART_RESPONSE_PROTOCOL_PROMPT}
 
 本次对话以图表分析为主：优先判断用户给出的数据适合的可视化方式，能生成图表时必须生成图表（pie、bar、line），
 并在 content 中解释图表反映的结论；缺少数据时先向用户追问，不要凭空编造数据。"""
+
+SEARCH_PROTOCOL_PROMPT = f"""{CHART_RESPONSE_PROTOCOL_PROMPT}
+
+本次对话已由服务端强制执行联网搜索，搜索结果会随系统提示提供：
+1. 必须基于本轮提供的搜索结果作答；不要仅凭模型记忆回答，也不要声称自己没有联网搜索能力。
+2. 仅依据搜索结果组织事实，不得虚构搜索结果中没有的信息；不同来源冲突时应明确说明。
+3. 在 content 中使用 Markdown 链接标注支撑结论的主要来源，例如 [来源标题](https://example.com)。
+4. 搜索不可用、失败或没有找到足够信息时应如实说明，并提示用户稍后重试或补充检索条件。
+5. 可以使用 get_current_time 判断“最新”“近期”等相对时间，使用 calculator 完成必要的数值计算。
+""".strip()
 
 INSURANCE_PROTOCOL_PROMPT = """
 你的最终回答必须是一个合法 JSON 对象，不能使用 Markdown JSON 代码围栏，也不能在 JSON 前后添加说明。格式固定为：

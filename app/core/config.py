@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # deepseek接口密钥，为None时不启用该模型
     deepseek_api_key: str | None = None
 
+    # -------------------------- 联网搜索配置 --------------------------
+    # Tavily 联网搜索接口密钥；为空时不影响服务启动，搜索工具会返回配置提示
+    tavily_api_key: str | None = None
+
     # -------------------------- Langfuse 大模型观测平台配置 --------------------------
     # Langfuse公钥，用于上报Agent/LLM调用链路、token消耗、trace追踪
     langfuse_public_key: str | None = None

@@ -4,6 +4,7 @@
 编译图）作为图节点挂载后，token 流（custom）与完整消息（messages）能否
 冒泡到顶层 astream——chat.py 的 SSE 与落库依赖这一行为。
 """
+
 import json
 
 import pytest
@@ -28,6 +29,7 @@ from app.core.langgraph.intent.registry import INTENT_SPECS
 from app.core.langgraph.prompts.system_chat import (
     CHART_ANALYSIS_PROTOCOL_PROMPT,
     CHART_RESPONSE_PROTOCOL_PROMPT,
+    SEARCH_PROTOCOL_PROMPT,
     SYSTEM_CHAT_PROMPT,
 )
 
@@ -37,15 +39,19 @@ def _mock_rag_retrieval():
     """屏蔽 general 意图子 Agent 的真实 RAG 检索（避免网络/DB 调用与重试退避）。"""
     embedder = AsyncMock()
     embedder.aembed_query.return_value = [0.1, 0.2]
-    with patch(
-        "app.core.langgraph.middleware.rag.get_embedder",
-        return_value=embedder,
-    ), patch(
-        "app.core.langgraph.middleware.rag.retrieve_similar_chunks",
-        return_value=[],
-    ), patch(
-        "app.core.langgraph.middleware.rag.rerank_chunks",
-        side_effect=lambda query, chunks: chunks,
+    with (
+        patch(
+            "app.core.langgraph.middleware.rag.get_embedder",
+            return_value=embedder,
+        ),
+        patch(
+            "app.core.langgraph.middleware.rag.retrieve_similar_chunks",
+            return_value=[],
+        ),
+        patch(
+            "app.core.langgraph.middleware.rag.rerank_chunks",
+            side_effect=lambda query, chunks: chunks,
+        ),
     ):
         yield
 
@@ -76,7 +82,9 @@ class ScriptedCaptureModel(BaseChatModel):
         self.index += 1
         return ChatResult(generations=[ChatGeneration(message=message)])
 
-    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+    async def _agenerate(
+        self, messages, stop=None, run_manager=None, **kwargs
+    ) -> ChatResult:
         return self._generate(messages, stop, run_manager, **kwargs)
 
     async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
@@ -120,9 +128,13 @@ def _build_supervisor(intent: str, checkpointer=None):
     models = {}
 
     def agent_builder(spec):
-        model = ScriptedCaptureModel(responses=[AIMessage(content=f"reply-from-{spec.id}")])
+        model = ScriptedCaptureModel(
+            responses=[AIMessage(content=f"reply-from-{spec.id}")]
+        )
         models[spec.id] = model
-        return build_intent_agent(spec, model=model, registry=PassthroughRegistry(model))
+        return build_intent_agent(
+            spec, model=model, registry=PassthroughRegistry(model)
+        )
 
     graph = build_supervisor_graph(
         classifier=classifier,
@@ -172,7 +184,9 @@ async def test_protocol_composed_per_intent():
     graph, models, _ = _build_supervisor("chart_analysis")
     await _invoke(graph, "画个柱状图", "t-chart")
 
-    system_messages = [m for m in models["chart_analysis"].captured[0] if m.type == "system"]
+    system_messages = [
+        m for m in models["chart_analysis"].captured[0] if m.type == "system"
+    ]
     assert len(system_messages) == 1
     assert system_messages[0].content.startswith("你是测试助手")
     assert CHART_ANALYSIS_PROTOCOL_PROMPT in system_messages[0].content
@@ -198,6 +212,20 @@ async def test_general_gets_chart_envelope_protocol():
 
 
 @pytest.mark.asyncio
+async def test_search_gets_json_and_source_protocol_without_rag():
+    graph, models, _ = _build_supervisor("search")
+    await _invoke(graph, "搜索今天的新闻", "t-search")
+
+    system_messages = [m for m in models["search"].captured[0] if m.type == "system"]
+    prompt = system_messages[0].content
+    assert CHART_RESPONSE_PROTOCOL_PROMPT in prompt
+    assert SEARCH_PROTOCOL_PROMPT in prompt
+    assert "Markdown 链接" in prompt
+    assert "已由服务端强制执行联网搜索" in prompt
+    assert "不要声称自己没有联网搜索能力" in prompt
+
+
+@pytest.mark.asyncio
 async def test_default_base_prompt_when_state_missing():
     graph, models, _ = _build_supervisor("chitchat")
     await graph.ainvoke(
@@ -220,7 +248,10 @@ async def test_tokens_stream_to_top_level():
     ai_node_names = set()
     namespaces = set()
     async for namespace, mode, payload in graph.astream(
-        {"messages": [HumanMessage(content="推荐一份医疗险")], "system_prompt": "你是测试助手"},
+        {
+            "messages": [HumanMessage(content="推荐一份医疗险")],
+            "system_prompt": "你是测试助手",
+        },
         config={"configurable": {"thread_id": "t-stream"}},
         stream_mode=["custom", "messages"],
         subgraphs=True,
@@ -248,8 +279,12 @@ async def test_tokens_stream_to_top_level():
 
 @pytest.mark.asyncio
 async def test_protocol_does_not_leak_across_checkpointed_intents():
-    graph, models, classifier = _build_supervisor("general", checkpointer=InMemorySaver())
-    await _invoke(graph, "解释报销流程", "t-protocol-switch", system_prompt="你是测试助手")
+    graph, models, classifier = _build_supervisor(
+        "general", checkpointer=InMemorySaver()
+    )
+    await _invoke(
+        graph, "解释报销流程", "t-protocol-switch", system_prompt="你是测试助手"
+    )
 
     classifier.intent = "chitchat"
     await graph.ainvoke(
@@ -326,7 +361,10 @@ async def test_checkpointer_memory_across_turns():
     await _invoke(graph, "你好", "t-memory")
     # 第二轮只发新消息（与 chat.py 的增量发送方式一致），历史由 checkpointer 补全
     result = await graph.ainvoke(
-        {"messages": [HumanMessage(content="我刚才说了什么")], "system_prompt": "你是测试助手"},
+        {
+            "messages": [HumanMessage(content="我刚才说了什么")],
+            "system_prompt": "你是测试助手",
+        },
         config=config,
     )
 

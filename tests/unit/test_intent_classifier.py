@@ -75,6 +75,15 @@ def test_classification_prompt_includes_examples_and_fallback():
     assert DEFAULT_INTENT_ID in prompt
 
 
+def test_classification_prompt_includes_search_intent_examples():
+    """联网、最新和行情类表达应作为 search 分类依据进入 prompt。"""
+    prompt = build_classification_prompt()
+
+    assert "- search：" in prompt
+    assert "人工智能新闻" in prompt
+    assert "黄金的市场行情" in prompt
+
+
 @pytest.mark.asyncio
 async def test_classify_empty_text_skips_llm():
     model = FakeStructuredModel()

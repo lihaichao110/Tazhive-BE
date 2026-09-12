@@ -58,8 +58,9 @@ v v
   注册表生成的 conditional edges 路由到对应子 Agent。
 - **意图注册表 (`intent/registry.py`)**：声明意图 id、分类描述/示例、响应协议、
   RAG 开关和可选工具，是分类与路由的共同数据源。
-- **Agent 工厂 (`agents/factory.py`)**：为每个意图构建独立 `create_agent` 子图；
-  checkpointer 仅挂外层 supervisor。
+- **Agent 工厂 (`agents/factory.py`)**：普通意图构建独立 `create_agent` 子图；
+  `search` 构建“查询规划 → 强制 Tavily → 结果回答”专属子图；checkpointer
+  仅挂外层 supervisor。
 - **状态 (`state.py`)**：`ChatAgentState` 扩展自 langchain 的 `AgentState`，
   `messages` 为 `add_messages` 累积语义（会话记忆由 checkpointer 按 thread_id
   维护），另有请求级字段 `model` / `thinking` / `system_prompt`。
@@ -92,6 +93,8 @@ v v
    通过 custom 流发送 intent 事件。
 6. conditional edges 路由到对应意图 Agent。四个共享横切中间件固定为
    Metrics → Resilience → ModelRouting → Streaming；仅 `general` 额外挂 RAG。
+   `search` 先由轻量模型规划最多两个查询，再由代码强制调用 Tavily，最后基于
+   最多五条去重结果生成带来源链接的回答；旧 Assistant 消息不参与搜索决策。
 7. 通过 `StreamingResponse` 使用 SSE 逐 token 返回。token 增量经
    `astream(stream_mode=["custom", "messages"], subgraphs=True)` 的 custom 通道接收
    （`StreamingMiddleware` 转发，规避 create_agent 回调断链，详见 llm-service.md）。
