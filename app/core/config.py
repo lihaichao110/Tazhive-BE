@@ -1,6 +1,7 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
 from dotenv import load_dotenv
+from pydantic_settings import BaseSettings
 
 # pydantic-settings 只会把 .env 读进 Settings 对象，不会写入 os.environ。
 # 而 Langfuse 等 SDK 是直接读 os.environ 的，所以这里手动加载一次，确保两者都生效。
@@ -16,11 +17,11 @@ class Settings(BaseSettings):
     # PostgreSQL数据库连接地址，sqlalchemy 连接串格式：驱动://账号:密码@主机:端口/数据库名
     database_url: str = "postgresql+psycopg://xxxxxxx"
     # 数据库用户名
-    PG_USER: str
+    PG_USER: str = ""
     # 数据库密码
-    PG_PASSWORD: str
+    PG_PASSWORD: str = ""
     # 数据库名
-    PG_DB: str
+    PG_DB: str = ""
     # LangGraph checkpoint 异步连接池配置。公网数据库需要在复用前检查连接，
     # 并及时回收空闲连接，避免拿到已被 NAT 或防火墙回收的 TCP 连接。
     # 连接池最小连接数；设为 0 表示没有请求时可以释放全部空闲连接。
@@ -89,7 +90,7 @@ class Settings(BaseSettings):
         case_sensitive = False
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """
     获取全局配置单例

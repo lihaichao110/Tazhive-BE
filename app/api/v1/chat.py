@@ -1,38 +1,42 @@
 import json
 import time
 import uuid
-from typing import AsyncGenerator
-
+from collections.abc import AsyncGenerator
 from logging import getLogger
+from typing import cast
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from langchain_core.runnables import RunnableConfig
-from sqlmodel import Session
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
+    BaseMessage,
     HumanMessage,
     SystemMessage,
     ToolMessage,
     message_chunk_to_message,
 )
-from app.api.deps import get_db, get_current_user
-from app.models.user import User
-from app.models.thread import Thread
-from app.models.message import Message
-from app.schemas.chat import ChatRequest
-from app.core.langgraph.graph import get_supervisor_graph
-from app.services.database import engine
-from app.models.agent import Agent
-from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
+from langchain_core.runnables import RunnableConfig
 from langfuse.langchain import CallbackHandler
+from sqlmodel import Session
+
+from app.api.deps import get_current_user, get_db
+from app.core.langgraph.graph import get_supervisor_graph
+from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
 from app.core.limiter import limiter
+from app.models.agent import Agent
+from app.models.message import Message
+from app.models.thread import Thread
+from app.models.user import User
+from app.schemas.chat import ChatRequest
+from app.services.database import engine
 
 logger = getLogger(__name__)
 
 langfuse_handler = CallbackHandler()
 
 router = APIRouter(tags=["chat"])
+
 
 def extract_assistant_message_fields(msg: AIMessage) -> dict:
     """从 AIMessage 提取需要存入数据库的字段"""
@@ -50,9 +54,10 @@ def extract_assistant_message_fields(msg: AIMessage) -> dict:
         "message_id": msg.id,
     }
 
+
 # 辅助函数：将前端消息字典转换为 LangChain 消息对象
-def dict_to_langchain_messages(messages: list[dict]):
-    lc_messages = []
+def dict_to_langchain_messages(messages: list[dict]) -> list[BaseMessage]:
+    lc_messages: list[BaseMessage] = []
     for msg in messages:
         role = msg.get("role")
         content = msg.get("content", "")
@@ -73,6 +78,7 @@ def dict_to_langchain_messages(messages: list[dict]):
             # 未知角色跳过，避免污染上下文
             continue
     return lc_messages
+
 
 def _extract_text_from_content(content) -> str:
     """从 AIMessageChunk.content 中提取纯文本，兼容 str 或 list 格式"""
@@ -96,12 +102,26 @@ def _is_model_node(meta: dict) -> bool:
     node = str(meta.get("langgraph_node") or "")
     return node == "model" or node.endswith(":model")
 
+
+def _accumulate_model_message(
+    current: AIMessage | AIMessageChunk | None,
+    incoming: AIMessage | AIMessageChunk,
+) -> AIMessage | AIMessageChunk:
+    """按消息 ID 聚合同一轮模型输出，保留工具调用后的最后一轮回复。"""
+    if isinstance(incoming, AIMessageChunk):
+        if isinstance(current, AIMessageChunk) and current.id == incoming.id:
+            return current + incoming
+        # 消息 ID 变化代表新一轮模型调用，上一轮工具调用消息不再作为最终回复。
+        return incoming
+    return incoming
+
+
 async def stream_chat_response(
     thread_id: str,
     model: str,
     agent,
     input_state: dict,
-    config: dict,
+    config: RunnableConfig,
     last_user_content: str | None,
 ) -> AsyncGenerator[str, None]:
     """生成 SSE 流式响应，并在结束时保存完整消息到数据库。
@@ -111,7 +131,7 @@ async def stream_chat_response(
     完整消息（含 tool_calls / usage_metadata，用于落库）通过 messages 流接收。
     """
     full_content = ""
-    final_message = None  # 在循环外初始化，确保 finally 中可访问
+    final_message: AIMessage | AIMessageChunk | None = None
     try:
         logger.info(f"流式响应开始：{config}")
         async for _namespace, mode, payload in agent.astream(
@@ -133,28 +153,27 @@ async def stream_chat_response(
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": model,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {
-                                "role": "assistant",
-                                "content": delta_content,
-                                "reasoning_content": delta_reasoning
-                            },
-                            "finish_reason": None,
-                            "logprobs": None
-                        }],
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "role": "assistant",
+                                    "content": delta_content,
+                                    "reasoning_content": delta_reasoning,
+                                },
+                                "finish_reason": None,
+                                "logprobs": None,
+                            }
+                        ],
                     }
                     yield f"data: {json.dumps(chunk_data)}\n\n"
             else:
                 # messages 流：取子 Agent 模型节点产出的完整消息（工具循环的
                 # 中间消息会被后续消息覆盖），工具结果 ToolMessage 不需要
                 chunk, meta = payload
-                if _is_model_node(meta):
-                    if isinstance(chunk, AIMessageChunk):
-                        # 子图 messages 流给出聚合后的最终 chunk，转换为可落库消息。
-                        final_message = message_chunk_to_message(chunk)
-                    elif isinstance(chunk, AIMessage):
-                        final_message = chunk
+                if _is_model_node(meta) and isinstance(chunk, (AIMessage, AIMessageChunk)):
+                    # messages 模式逐块发送；结束时的空 chunk 也必须合并，不能覆盖正文。
+                    final_message = _accumulate_model_message(final_message, chunk)
     except Exception as e:
         # 模型彻底调用失败等异常直接向上抛出，这里统一转成 SSE error 帧，
         # 前端才能看到错误而不是只收到 [DONE]
@@ -177,7 +196,9 @@ async def stream_chat_response(
         with Session(engine) as session:
             if last_user_content:
                 session.add(Message(thread_id=thread_id, role="user", content=last_user_content))
-            if final_message and isinstance(final_message, AIMessage):
+            if isinstance(final_message, AIMessageChunk):
+                final_message = cast(AIMessage, message_chunk_to_message(final_message))
+            if isinstance(final_message, AIMessage):
                 # 完整保存 assistant 消息
                 assistant_fields = extract_assistant_message_fields(final_message)
                 session.add(Message(thread_id=thread_id, role="assistant", **assistant_fields))
@@ -186,6 +207,7 @@ async def stream_chat_response(
                 session.add(Message(thread_id=thread_id, role="assistant", content=full_content))
             session.commit()
 
+
 @router.post("/chat/{thread_id}", response_model=None)
 @limiter.limit("20/minute")
 async def chat(
@@ -193,7 +215,7 @@ async def chat(
     thread_id: str,
     payload: ChatRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     # slowapi 通过 request 获取客户端信息并执行限流。
     # 验证线程归属
@@ -234,7 +256,7 @@ async def chat(
 
     config: RunnableConfig = {
         "configurable": {"thread_id": thread_id},
-        "callbacks": [langfuse_handler]
+        "callbacks": [langfuse_handler],
     }
 
     # 增量发送：图的 messages 为 add_messages 累积语义，会话记忆由
@@ -242,8 +264,7 @@ async def chat(
     # 用户消息；空 thread（首次对话/前端带历史导入）才发送全量消息。
     checkpoint_state = await supervisor.aget_state(config)
     if checkpoint_state.values.get("messages"):
-        input_messages = [m for m in lc_messages if isinstance(m, HumanMessage)][-1:]
-        input_messages = input_messages or lc_messages
+        input_messages = [m for m in lc_messages if isinstance(m, HumanMessage)][-1:] or lc_messages
     else:
         input_messages = lc_messages
 

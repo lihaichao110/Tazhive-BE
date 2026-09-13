@@ -1,7 +1,9 @@
 import time
 import uuid
+
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
+
 from app.core.logging import logger
 from app.observability.metrics import REQUEST_COUNT, REQUEST_DURATION
 
@@ -24,8 +26,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         process_time = time.time() - start_time
 
         # 记录指标
-        REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path, status=response.status_code).inc()
-        REQUEST_DURATION.labels(method=request.method, endpoint=request.url.path).observe(process_time)
+        REQUEST_COUNT.labels(
+            method=request.method, endpoint=request.url.path, status=response.status_code
+        ).inc()
+        REQUEST_DURATION.labels(method=request.method, endpoint=request.url.path).observe(
+            process_time
+        )
 
         logger.info(
             f"请求完成✅: {request.method} {request.url.path} "

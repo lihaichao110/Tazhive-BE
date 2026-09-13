@@ -1,7 +1,7 @@
-from typing import List
 from app.services.rag.retriever import RetrievedChunk
 
-def rerank_chunks(query: str, chunks: List[RetrievedChunk]) -> List[RetrievedChunk]:
+
+def rerank_chunks(query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
     """
     根据查询与分块内容的关键词重叠程度进行简单重排序。
     可替换为更高级的重排序模型。

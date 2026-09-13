@@ -1,8 +1,9 @@
 import asyncio
 import json
-from pathlib import Path
+
 # 导入LangGraph supervisor图实例
 from app.core.langgraph.graph import get_supervisor_graph
+
 # 导入三个评估指标函数：正确性、忠实度、相关性
 from app.evals.evaluators.correctness import evaluate_correctness
 from app.evals.evaluators.faithfulness import evaluate_faithfulness
@@ -15,26 +16,27 @@ async def run_evaluation(dataset_path: str):
     :param dataset_path: 评测数据集jsonl文件路径，每行一条样本
     """
     # 读取jsonl数据集：逐行解析json，得到评测样本列表
-    with open(dataset_path, "r", encoding="utf-8") as f:
+    with open(dataset_path, encoding="utf-8") as f:
         samples = [json.loads(line) for line in f]
 
     # 初始化LangGraph supervisor图实例
     agent = await get_supervisor_graph()
 
     # 初始化分数存储字典，保存每个指标所有样本得分
-    scores = {"correctness": [], "faithfulness": [], "relevance": []}
+    scores: dict[str, list[float]] = {"correctness": [], "faithfulness": [], "relevance": []}
 
     # 遍历每一条评测样本，逐个执行Agent推理 + 指标打分
     for sample in samples:
-        question = sample["question"]          # 用户问题
+        question = sample["question"]  # 用户问题
         golden = sample.get("golden_answer", "")  # 标准答案（金标准）
-        context = sample.get("context", "")       # 参考上下文（用于faithfulness评估）
+        context = sample.get("context", "")  # 参考上下文（用于faithfulness评估）
 
         # 构造Agent输入状态
         from langchain_core.messages import HumanMessage
+
         input_state = {
             "messages": [HumanMessage(content=question)],  # 用户提问消息
-            "model": "deepseek-v4-flash",   # 指定推理模型，实际项目建议从配置文件读取
+            "model": "deepseek-v4-flash",  # 指定推理模型，实际项目建议从配置文件读取
             "system_prompt": "你是一个乐于助人的助手。",
         }
 
@@ -47,7 +49,11 @@ async def run_evaluation(dataset_path: str):
         # 取出Agent最后一条回复消息
         assistant_message = result["messages"][-1]
         # 提取模型预测回答文本，做兼容处理防止非标准消息对象
-        predicted = assistant_message.content if hasattr(assistant_message, "content") else str(assistant_message)
+        predicted = (
+            assistant_message.content
+            if hasattr(assistant_message, "content")
+            else str(assistant_message)
+        )
 
         # 执行三项评估打分，将得分存入对应列表
         # correctness：预测回答与标准答案的匹配程度
@@ -65,7 +71,8 @@ async def run_evaluation(dataset_path: str):
 
 if __name__ == "__main__":
     import sys
-    print(f'sys.argv:{sys.argv}')
+
+    print(f"sys.argv:{sys.argv}")
     # 命令行传参：传入数据集路径；不传则使用默认数据集路径
     dataset = sys.argv[1] if len(sys.argv) > 1 else "app/evals/datasets/qa_golden.jsonl"
     # 启动异步主函数

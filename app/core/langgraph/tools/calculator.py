@@ -1,5 +1,6 @@
 from langchain_core.tools import tool
 
+
 @tool
 def calculator(expression: str) -> str:
     """计算一个数学表达式。输入：表达式字符串，如 '2 + 3 * 4'。输出：计算结果。"""

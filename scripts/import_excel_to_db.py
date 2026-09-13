@@ -52,7 +52,8 @@ def read_excel(file_path: str, sheet_name: str | None = None) -> list[dict[str, 
         # 跳过整行都是空值的空行
         if row is None or all(v is None or v == "" for v in row):
             continue
-        records.append(dict(zip(header, row)))
+        # 表头和数据列必须一一对应，避免列数异常时静默截断。
+        records.append(dict(zip(header, row, strict=True)))
 
     wb.close()
     return records

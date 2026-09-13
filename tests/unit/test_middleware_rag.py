@@ -1,4 +1,5 @@
 """RagMiddleware 单元测试：检索注入 system message 的行为。"""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

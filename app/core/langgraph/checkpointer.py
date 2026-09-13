@@ -1,11 +1,14 @@
-from app.core.config import settings
-from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from langgraph.checkpoint.postgres import PostgresSaver
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from psycopg_pool import ConnectionPool, AsyncConnectionPool
 from logging import getLogger
+from typing import Any, cast
+
 import aiosqlite
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from psycopg_pool import AsyncConnectionPool, ConnectionPool
+
+from app.core.config import settings
 
 logger = getLogger(__name__)
 
@@ -53,7 +56,7 @@ def _run_pg_migrations():
 # 延迟创建异步资源（导入本模块不触发任何数据库连接）
 _async_pool = None
 _async_sqlite_conn = None
-_async_checkpointer = None
+_async_checkpointer: BaseCheckpointSaver | None = None
 
 
 async def _log_checkpoint_reconnect_failed(pool: AsyncConnectionPool) -> None:
@@ -96,13 +99,13 @@ def _create_async_pool() -> AsyncConnectionPool:
 async def get_async_checkpointer() -> BaseCheckpointSaver:
     """获取或创建异步 checkpointer 实例（应在事件循环内调用，按 DATABASE_URL 选择 SQLite/Postgres）"""
     global _async_pool, _async_sqlite_conn, _async_checkpointer
-    if _async_checkpointer is None:
+    checkpointer = _async_checkpointer
+    if checkpointer is None:
         if _is_sqlite():
             # SQLite：长连接 + AsyncSqliteSaver，setup() 建表（幂等）
             _async_sqlite_conn = await aiosqlite.connect(_sqlite_path())
-            saver = AsyncSqliteSaver(_async_sqlite_conn)
-            await saver.setup()
-            _async_checkpointer = saver
+            checkpointer = AsyncSqliteSaver(_async_sqlite_conn)
+            await checkpointer.setup()
             logger.info("AsyncSqliteSaver OK (%s)", _sqlite_path())
         else:
             # Postgres：先跑迁移，再建异步连接池
@@ -111,10 +114,11 @@ async def get_async_checkpointer() -> BaseCheckpointSaver:
             _async_pool = _create_async_pool()
             # 手动打开连接池（需要事件循环）
             await _async_pool.open()
-            # 创建异步 checkpointer
-            _async_checkpointer = AsyncPostgresSaver(_async_pool)
+            # 创建异步 checkpointer（langgraph 期望 dict 行的连接，psycopg 默认 tuple 行，此处断言）
+            checkpointer = AsyncPostgresSaver(cast(Any, _async_pool))
+        _async_checkpointer = checkpointer
 
-    return _async_checkpointer
+    return checkpointer
 
 
 async def close_async_checkpointer() -> None:

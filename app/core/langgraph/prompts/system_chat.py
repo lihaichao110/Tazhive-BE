@@ -5,9 +5,7 @@
 supervisor 图的 intent_node 在路由前拼接到基础提示词之后。
 """
 
-SYSTEM_CHAT_PROMPT = (
-    """你叫泰智汇，你是一个有用的人工智能助手。准确、简洁地回答用户的问题。"""
-)
+SYSTEM_CHAT_PROMPT = """你叫泰智汇，你是一个有用的人工智能助手。准确、简洁地回答用户的问题。"""
 
 CHART_RESPONSE_PROTOCOL_PROMPT = """
 你的最终回答必须是一个合法 JSON 对象，不能使用 Markdown JSON 代码围栏，也不能在 JSON 前后添加说明。格式固定为：

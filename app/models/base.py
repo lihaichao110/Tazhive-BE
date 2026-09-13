@@ -1,6 +1,7 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
-from sqlmodel import SQLModel, Field
+
+from sqlmodel import Field, SQLModel
 
 
 class BaseModel(SQLModel):
@@ -13,8 +14,8 @@ class BaseModel(SQLModel):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
 
     # 记录创建时间，默认生成 UTC 标准时区时间，新增记录自动填充，业务不要手动修改
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # 记录更新时间，新建时和created_at一致；⚠注意：此处default_factory仅新增生效！
     # lambda只会在行插入的时候跑一遍，更新数据不会自动刷新时间，需要自己写触发器 / 业务代码手动赋值updated_at=datetime.now(timezone.utc)
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

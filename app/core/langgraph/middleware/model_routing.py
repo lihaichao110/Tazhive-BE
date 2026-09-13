@@ -1,4 +1,5 @@
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 
@@ -24,7 +25,7 @@ class ModelRoutingMiddleware(AgentMiddleware):
     ) -> ModelResponse[Any]:
         state = request.state
         model = self.registry.get_model(
-            state.get("model"),
-            state.get("thinking"),
+            cast(str | None, state.get("model")),
+            cast(dict | None, state.get("thinking")),
         )
         return await handler(request.override(model=model))

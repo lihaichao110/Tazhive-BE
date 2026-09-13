@@ -23,12 +23,8 @@ def test_create_async_pool_enables_stale_connection_protection(monkeypatch):
     monkeypatch.setattr(checkpointer.settings, "checkpoint_pool_min_size", 0)
     monkeypatch.setattr(checkpointer.settings, "checkpoint_pool_max_size", 10)
     monkeypatch.setattr(checkpointer.settings, "checkpoint_pool_timeout_seconds", 10.0)
-    monkeypatch.setattr(
-        checkpointer.settings, "checkpoint_pool_max_idle_seconds", 300.0
-    )
-    monkeypatch.setattr(
-        checkpointer.settings, "checkpoint_pool_max_lifetime_seconds", 1800.0
-    )
+    monkeypatch.setattr(checkpointer.settings, "checkpoint_pool_max_idle_seconds", 300.0)
+    monkeypatch.setattr(checkpointer.settings, "checkpoint_pool_max_lifetime_seconds", 1800.0)
     monkeypatch.setattr(checkpointer.settings, "db_connect_timeout_seconds", 5)
     monkeypatch.setattr(checkpointer.settings, "db_keepalives_idle_seconds", 60)
     monkeypatch.setattr(checkpointer.settings, "db_keepalives_interval_seconds", 20)

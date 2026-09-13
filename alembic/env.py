@@ -1,21 +1,21 @@
 import sys
 from logging.config import fileConfig
+from pathlib import Path
+
+from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
-from pathlib import Path
 
 # 将项目根目录加入 sys.path，以便导入 app 模块
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
-from app.core.config import settings
+# 导入模型模块的副作用会把所有业务表注册到 SQLModel.metadata，供 autogenerate 比对。
+import app.models  # noqa: F401, E402
+from app.core.config import settings  # noqa: E402
 
 # 表面上变量没被使用，实际副作用：执行模型class定义，注册进SQLModel.metadata
 # Alembic 就是读取这个 target_metadata 里面收集到的所有表结构，用来对比数据库，生成迁移脚本。
-from app.models import User, Thread, Message, Document  # 导入所有模型，确保被 SQLModel.metadata 识别
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -75,9 +75,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

@@ -14,6 +14,8 @@ intent_node 每轮请求执行一次：调分类器 → 写 state.intent → 路
 是“规划 → Tavily → 回答”子图。它们直接挂载为图节点，以保留内部 token 流。
 """
 
+from collections.abc import Hashable
+
 from langchain_core.messages import HumanMessage
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
@@ -70,11 +72,9 @@ def build_supervisor_graph(
 ):
     """编译 supervisor 图。classifier / agent_builder / checkpointer 均可注入，供测试使用。"""
     builder = StateGraph(SupervisorState)
-    builder.add_node(
-        "intent_node", make_intent_node(classifier or get_intent_classifier())
-    )
+    builder.add_node("intent_node", make_intent_node(classifier or get_intent_classifier()))
 
-    route_map: dict[str, str] = {}
+    route_map: dict[Hashable, str] = {}
     for spec in iterate_intent_specs():
         node_name = f"{spec.id}_node"
         builder.add_node(node_name, agent_builder(spec))

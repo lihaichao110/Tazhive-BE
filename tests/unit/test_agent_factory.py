@@ -2,6 +2,7 @@
 
 from langchain_core.language_models.fake_chat_models import FakeChatModel
 
+import app.core.langgraph.agents.search as search_module
 from app.core.langgraph.agents.factory import (
     _build_middleware_chain,
     _shared_metrics,
@@ -61,12 +62,24 @@ def test_search_chain_has_only_search_specific_tools_and_no_rag():
     ]
 
 
-def test_search_intent_uses_deterministic_search_subgraph():
+def test_search_intent_uses_deterministic_search_subgraph(monkeypatch):
+    class StubSearchPlanner:
+        """图结构测试不执行规划节点，因此无需创建真实的规划模型。"""
+
+        async def aplan(self, messages):
+            raise AssertionError("图结构测试不应执行搜索规划")
+
+    # 搜索子图在构建时会分别创建规划模型和回答模型，两处都要隔离真实配置。
+    monkeypatch.setattr(search_module, "SearchPlanner", StubSearchPlanner)
+    monkeypatch.setattr(
+        search_module.default_registry,
+        "get_model",
+        lambda model_name=None, thinking=None: FakeChatModel(),
+    )
+
     graph = build_agent_for_intent(get_intent_spec("search"))
 
-    assert {"search_plan_node", "tavily_node", "search_answer_node"} <= set(
-        graph.get_graph().nodes
-    )
+    assert {"search_plan_node", "tavily_node", "search_answer_node"} <= set(graph.get_graph().nodes)
 
 
 def test_shared_middleware_singletons_reused_across_intents():

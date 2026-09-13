@@ -6,6 +6,7 @@ class UserRegister(BaseModel):
     用户注册请求体模型
     接收前端提交的注册表单参数，做数据校验
     """
+
     username: str
     """用户名"""
     email: EmailStr
@@ -19,6 +20,7 @@ class UserLogin(BaseModel):
     用户登录请求体模型
     接收用户名密码用于身份校验
     """
+
     username: str
     """登录用户名"""
     password: str
@@ -30,6 +32,7 @@ class TokenResponse(BaseModel):
     JWT登录成功返回token响应模型
     OAuth2 标准返回格式
     """
+
     access_token: str
     """JWT访问令牌"""
     token_type: str = "bearer"

@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlmodel import Session, select
+
 from app.api.deps import get_db
-from app.core.security import verify_password, get_password_hash, create_access_token
-from app.models.user import User
-from app.schemas.auth import UserRegister, UserLogin, TokenResponse
 from app.core.limiter import limiter
+from app.core.security import create_access_token, get_password_hash, verify_password
+from app.models.user import User
+from app.schemas.auth import TokenResponse, UserLogin, UserRegister
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
 
 @router.post("/register", response_model=TokenResponse)
 @limiter.limit("5/minute")
@@ -32,6 +34,7 @@ def register(request: Request, payload: UserRegister, db: Session = Depends(get_
     # 生成令牌
     token = create_access_token(user.id)
     return TokenResponse(access_token=token)
+
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")

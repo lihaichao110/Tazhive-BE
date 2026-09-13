@@ -45,9 +45,7 @@ class CaptureModel(BaseChatModel):
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         self.captured.append(list(messages))
-        return ChatResult(
-            generations=[ChatGeneration(message=AIMessage(content=self.content))]
-        )
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=self.content))])
 
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         return self._generate(messages, stop, run_manager, **kwargs)
@@ -91,9 +89,7 @@ def make_search_tool(handler):
             "include_domains": include_domains,
             "exclude_domains": exclude_domains,
         }
-        return await handler(
-            **{key: value for key, value in params.items() if value is not None}
-        )
+        return await handler(**{key: value for key, value in params.items() if value is not None})
 
     return StructuredTool.from_function(
         coroutine=search,
@@ -192,9 +188,7 @@ async def test_planner_failure_falls_back_to_latest_question():
         registry=registry,
     )
 
-    result = await graph.ainvoke(
-        {"messages": [HumanMessage(content="请搜索最新的 Python 新闻")]}
-    )
+    result = await graph.ainvoke({"messages": [HumanMessage(content="请搜索最新的 Python 新闻")]})
 
     assert len(calls) == 1
     assert calls[0]["query"] == "请搜索最新的 Python 新闻"
@@ -222,9 +216,7 @@ async def test_search_results_are_interleaved_deduplicated_and_limited():
     graph = build_search_agent(
         get_intent_spec("search"),
         planner=FakePlanner(
-            SearchPlan(
-                queries=[SearchQuery(query="query-a"), SearchQuery(query="query-b")]
-            )
+            SearchPlan(queries=[SearchQuery(query="query-a"), SearchQuery(query="query-b")])
         ),
         search_tool=make_search_tool(handler),
         answer_model=answer,
@@ -239,8 +231,7 @@ async def test_search_results_are_interleaved_deduplicated_and_limited():
         item["url"] for item in result["search_results"]
     }
     assert all(
-        len(item["content"]) <= MAX_RESULT_CONTENT_CHARS
-        for item in result["search_results"]
+        len(item["content"]) <= MAX_RESULT_CONTENT_CHARS for item in result["search_results"]
     )
 
 

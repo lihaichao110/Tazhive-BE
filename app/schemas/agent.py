@@ -1,15 +1,16 @@
-from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+
+from pydantic import BaseModel
 
 
 class AgentCreate(BaseModel):
     """创建Agent请求体"""
+
     name: str
     """Agent名称"""
-    description: Optional[str] = None
+    description: str | None = None
     """Agent描述信息"""
-    system_prompt: Optional[str] = None
+    system_prompt: str | None = None
     """模型系统提示词"""
     model: str = "deepseek-v4-flash"
     """调用的大模型标识"""
@@ -19,31 +20,33 @@ class AgentCreate(BaseModel):
 
 class AgentUpdate(BaseModel):
     """更新Agent请求体，字段不传则不修改"""
-    name: Optional[str] = None
+
+    name: str | None = None
     """Agent名称"""
-    description: Optional[str] = None
+    description: str | None = None
     """Agent描述信息"""
-    system_prompt: Optional[str] = None
+    system_prompt: str | None = None
     """模型系统提示词"""
-    model: Optional[str] = None
+    model: str | None = None
     """调用的大模型标识"""
-    temperature: Optional[float] = None
+    temperature: float | None = None
     """模型温度，控制生成随机性，取值0~1"""
-    is_active: Optional[bool] = None
+    is_active: bool | None = None
     """Agent是否启用"""
 
 
 class AgentRead(BaseModel):
     """Agent返回响应模型"""
+
     id: str
     """Agent唯一主键ID"""
     user_id: str
     """归属用户ID"""
     name: str
     """Agent名称"""
-    description: Optional[str]
+    description: str | None
     """Agent描述信息"""
-    system_prompt: Optional[str]
+    system_prompt: str | None
     """模型系统提示词"""
     model: str
     """调用的大模型标识"""

@@ -53,7 +53,8 @@ def read_excel(file_path: str, sheet_name: str | None = None) -> list[dict[str, 
     for row in rows:
         if row is None or all(v is None or str(v).strip() == "" for v in row):
             continue  # 跳过空行
-        records.append(dict(zip(header, row)))
+        # 表头和数据列必须一一对应，避免列数异常时静默截断。
+        records.append(dict(zip(header, row, strict=True)))
 
     wb.close()
     return records
@@ -121,7 +122,10 @@ def main() -> None:
     elapsed = time.perf_counter() - start
     logger.info(
         "导入完成：成功 %d 条，跳过 %d 条（已存在），失败 %d 条，耗时 %.2fs",
-        success, skipped, failed, elapsed,
+        success,
+        skipped,
+        failed,
+        elapsed,
     )
 
 

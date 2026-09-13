@@ -17,7 +17,8 @@ langgraph.config.get_config() 与 runtime.stream_writer 在模型调用处全部
 chat.py 的接收逻辑无需变化。
 """
 
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from langchain_core.runnables.config import var_child_runnable_config
@@ -78,7 +79,9 @@ class StreamingMiddleware(AgentMiddleware):
         try:
             writer = getattr(request.runtime, "stream_writer", None)
             tapped = _TapRunnable(request.model, writer)
-            return await handler(request.override(model=tapped))
+            # _TapRunnable 是对模型的结构化替身（实现 bind/bind_tools/ainvoke），
+            # 并非 BaseChatModel 子类；override 期望 BaseChatModel，此处按上游约定绕过。
+            return await handler(request.override(model=tapped))  # type: ignore[arg-type]
         finally:
             if token is not None:
                 var_child_runnable_config.reset(token)

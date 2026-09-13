@@ -1,4 +1,5 @@
 """ResilienceMiddleware 单元测试：重试 + registry 故障转移。"""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,9 +16,7 @@ def _make_request():
 
 def _make_mw(**kwargs):
     registry = MagicMock()
-    mw = ResilienceMiddleware(
-        registry=registry, max_attempts=3, wait_min=0, wait_max=0, **kwargs
-    )
+    mw = ResilienceMiddleware(registry=registry, max_attempts=3, wait_min=0, wait_max=0, **kwargs)
     return mw, registry
 
 

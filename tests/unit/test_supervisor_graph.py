@@ -6,9 +6,9 @@
 """
 
 import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, patch
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -20,8 +20,8 @@ from langchain_core.messages import (
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
 
-from app.api.v1.chat import _is_model_node
 from app.api.v1 import chat as chat_api
+from app.api.v1.chat import _accumulate_model_message, _is_model_node
 from app.core.langgraph.agents.factory import build_intent_agent
 from app.core.langgraph.graph.supervisor import build_supervisor_graph
 from app.core.langgraph.intent.classifier import IntentResult
@@ -82,9 +82,7 @@ class ScriptedCaptureModel(BaseChatModel):
         self.index += 1
         return ChatResult(generations=[ChatGeneration(message=message)])
 
-    async def _agenerate(
-        self, messages, stop=None, run_manager=None, **kwargs
-    ) -> ChatResult:
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
         return self._generate(messages, stop, run_manager, **kwargs)
 
     async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
@@ -128,13 +126,9 @@ def _build_supervisor(intent: str, checkpointer=None):
     models = {}
 
     def agent_builder(spec):
-        model = ScriptedCaptureModel(
-            responses=[AIMessage(content=f"reply-from-{spec.id}")]
-        )
+        model = ScriptedCaptureModel(responses=[AIMessage(content=f"reply-from-{spec.id}")])
         models[spec.id] = model
-        return build_intent_agent(
-            spec, model=model, registry=PassthroughRegistry(model)
-        )
+        return build_intent_agent(spec, model=model, registry=PassthroughRegistry(model))
 
     graph = build_supervisor_graph(
         classifier=classifier,
@@ -184,9 +178,7 @@ async def test_protocol_composed_per_intent():
     graph, models, _ = _build_supervisor("chart_analysis")
     await _invoke(graph, "画个柱状图", "t-chart")
 
-    system_messages = [
-        m for m in models["chart_analysis"].captured[0] if m.type == "system"
-    ]
+    system_messages = [m for m in models["chart_analysis"].captured[0] if m.type == "system"]
     assert len(system_messages) == 1
     assert system_messages[0].content.startswith("你是测试助手")
     assert CHART_ANALYSIS_PROTOCOL_PROMPT in system_messages[0].content
@@ -264,14 +256,12 @@ async def test_tokens_stream_to_top_level():
             if isinstance(chunk, (AIMessage, AIMessageChunk)):
                 ai_node_names.add(str(meta.get("langgraph_node")))
                 if _is_model_node(meta):
-                    final_message = (
-                        message_chunk_to_message(chunk)
-                        if isinstance(chunk, AIMessageChunk)
-                        else chunk
-                    )
+                    final_message = _accumulate_model_message(final_message, chunk)
 
     assert token_text == "reply-from-insurance"
     assert final_message is not None
+    if isinstance(final_message, AIMessageChunk):
+        final_message = message_chunk_to_message(final_message)
     assert final_message.content == "reply-from-insurance"
     assert "model" in ai_node_names
     assert any(ns and ns[0].startswith("insurance_node:") for ns in namespaces)
@@ -279,12 +269,8 @@ async def test_tokens_stream_to_top_level():
 
 @pytest.mark.asyncio
 async def test_protocol_does_not_leak_across_checkpointed_intents():
-    graph, models, classifier = _build_supervisor(
-        "general", checkpointer=InMemorySaver()
-    )
-    await _invoke(
-        graph, "解释报销流程", "t-protocol-switch", system_prompt="你是测试助手"
-    )
+    graph, models, classifier = _build_supervisor("general", checkpointer=InMemorySaver())
+    await _invoke(graph, "解释报销流程", "t-protocol-switch", system_prompt="你是测试助手")
 
     classifier.intent = "chitchat"
     await graph.ainvoke(
@@ -343,9 +329,7 @@ async def test_chat_sse_unpacks_subgraph_events_and_persists_final_message(monke
     ]
     assert not any(item.get("type") == "intent" for item in payloads)
     token_text = "".join(
-        item["choices"][0]["delta"].get("content", "")
-        for item in payloads
-        if "choices" in item
+        item["choices"][0]["delta"].get("content", "") for item in payloads if "choices" in item
     )
     assert token_text == "reply-from-insurance"
     assert session.committed is True

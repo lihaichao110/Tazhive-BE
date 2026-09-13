@@ -30,10 +30,7 @@ def test_load_xlsx_extracts_visible_sheets_and_normalizes_values(tmp_path):
 
     assert len(texts) == 2
     assert texts[0].startswith("工作表: 汇总\n")
-    assert (
-        "A 产品\t12\t2026-09-11T00:00:00\t2026-09-11T08:30:00\t=B2*2"
-        in texts[0]
-    )
+    assert "A 产品\t12\t2026-09-11T00:00:00\t2026-09-11T08:30:00\t=B2*2" in texts[0]
     assert texts[1] == "工作表: 明细\n\t保留列位置\t包含 制表符"
     assert all("内部数据" not in text for text in texts)
     assert all("不应被提取" not in text for text in texts)

@@ -18,8 +18,8 @@ from app.core.langgraph.middleware import (
     ResilienceMiddleware,
     StreamingMiddleware,
 )
-from app.core.langgraph.state import ChatAgentState
 from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
+from app.core.langgraph.state import ChatAgentState
 from app.core.langgraph.tools import tools as default_tools
 from app.services.llm.registry import LLMRegistry, default_registry
 
@@ -48,9 +48,7 @@ _shared_model_routing = ModelRoutingMiddleware()
 _shared_streaming = StreamingMiddleware()
 
 
-def _build_middleware_chain(
-    spec: IntentSpec, registry: LLMRegistry | None = None
-) -> list:
+def _build_middleware_chain(spec: IntentSpec, registry: LLMRegistry | None = None) -> list:
     """按意图组装中间件链（列表靠前为外层）。
 
     Metrics → Rag(仅 use_rag) → Resilience → ModelRouting → Streaming；

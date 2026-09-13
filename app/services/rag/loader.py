@@ -3,7 +3,7 @@ from pathlib import Path
 from xml.etree.ElementTree import ParseError
 from zipfile import BadZipFile
 
-from langchain_community.document_loaders import TextLoader, PyPDFLoader, Docx2txtLoader
+from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, TextLoader
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
@@ -21,11 +21,7 @@ def _format_excel_cell(value: object) -> str:
     else:
         text = str(value)
     return (
-        text.replace("\t", " ")
-        .replace("\r\n", " ")
-        .replace("\r", " ")
-        .replace("\n", " ")
-        .strip()
+        text.replace("\t", " ").replace("\r\n", " ").replace("\r", " ").replace("\n", " ").strip()
     )
 
 
@@ -77,21 +73,19 @@ def _load_excel(path: Path) -> list[str]:
         if workbook is not None:
             workbook.close()
 
+
 def load_document(file_path: str) -> list[str]:
     """加载文档并返回纯文本列表（按页或整个）"""
     path = Path(file_path)
     ext = path.suffix.lower()
     if ext in [".txt", ".md"]:
-        loader = TextLoader(str(path), encoding="utf-8")
-        docs = loader.load()
+        docs = TextLoader(str(path), encoding="utf-8").load()
         return [doc.page_content for doc in docs]
     elif ext == ".pdf":
-        loader = PyPDFLoader(str(path))
-        docs = loader.load()
+        docs = PyPDFLoader(str(path)).load()
         return [doc.page_content for doc in docs]
     elif ext == ".docx":
-        loader = Docx2txtLoader(str(path))
-        docs = loader.load()
+        docs = Docx2txtLoader(str(path)).load()
         return [doc.page_content for doc in docs]
     elif ext == ".xlsx":
         return _load_excel(path)

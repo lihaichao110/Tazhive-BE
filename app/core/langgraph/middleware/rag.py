@@ -1,4 +1,5 @@
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -30,7 +31,7 @@ class RagMiddleware(AgentMiddleware):
         # 这里优先复用，只追加参考资料；直接调用（如单测）时退回从 state 组装
         system_prompt = (
             request.system_prompt
-            or request.state.get("system_prompt")
+            or cast(str | None, request.state.get("system_prompt"))
             or SYSTEM_CHAT_PROMPT
         )
 
@@ -41,9 +42,7 @@ class RagMiddleware(AgentMiddleware):
             rag_context = "\n\n".join(findings)
             system_prompt = f"{system_prompt}\n\n参考资料：\n{rag_context}"
 
-        return await handler(
-            request.override(system_message=SystemMessage(content=system_prompt))
-        )
+        return await handler(request.override(system_message=SystemMessage(content=system_prompt)))
 
     @staticmethod
     def _last_user_text(messages: list[Any]) -> str | None:

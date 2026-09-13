@@ -55,11 +55,7 @@ class SearchPlannerProtocol(Protocol):
 
 def _latest_human_message(messages: list) -> HumanMessage | None:
     return next(
-        (
-            message
-            for message in reversed(messages)
-            if isinstance(message, HumanMessage)
-        ),
+        (message for message in reversed(messages) if isinstance(message, HumanMessage)),
         None,
     )
 
@@ -76,18 +72,14 @@ def _recent_user_texts(messages: list, limit: int = 3) -> list[str]:
 
 def _fallback_plan(messages: list) -> SearchPlan:
     latest = _latest_human_message(messages)
-    query = (
-        str(latest.content).strip()[:500] if latest and latest.content else "联网搜索"
-    )
+    query = str(latest.content).strip()[:500] if latest and latest.content else "联网搜索"
     return SearchPlan(queries=[SearchQuery(query=query)])
 
 
 class SearchPlanner:
     """使用轻量模型生成 Tavily 参数；失败由调用节点降级为原问题搜索。"""
 
-    def __init__(
-        self, model=None, timeout_seconds: float = SEARCH_PLANNER_TIMEOUT_SECONDS
-    ):
+    def __init__(self, model=None, timeout_seconds: float = SEARCH_PLANNER_TIMEOUT_SECONDS):
         planner_model = model or default_registry.get_model(
             SEARCH_PLANNER_MODEL,
             thinking={"type": "disabled"},
@@ -113,9 +105,7 @@ class SearchPlanner:
             self._structured.ainvoke(
                 [
                     SystemMessage(content=prompt),
-                    HumanMessage(
-                        content=recent_texts[-1] if recent_texts else "联网搜索"
-                    ),
+                    HumanMessage(content=recent_texts[-1] if recent_texts else "联网搜索"),
                 ]
             ),
             timeout=self._timeout_seconds,
@@ -138,9 +128,7 @@ class SearchHistoryIsolationMiddleware(AgentMiddleware):
             ),
             default=-1,
         )
-        messages = (
-            request.messages[latest_index:] if latest_index >= 0 else request.messages
-        )
+        messages = request.messages[latest_index:] if latest_index >= 0 else request.messages
         return await handler(request.override(messages=messages))
 
 
@@ -227,9 +215,7 @@ def build_search_agent(
             logger.info("搜索规划完成：queries=%s", len(plan.queries))
         except Exception as exc:
             plan = _fallback_plan(state.get("messages") or [])
-            logger.warning(
-                "搜索规划失败，使用原问题降级：error_type=%s", type(exc).__name__
-            )
+            logger.warning("搜索规划失败，使用原问题降级：error_type=%s", type(exc).__name__)
         return {
             "search_plan": plan.model_dump(),
             "search_results": [],
@@ -257,9 +243,7 @@ def build_search_agent(
             elif isinstance(outcome, dict):
                 raw_results = outcome.get("results") or []
                 if isinstance(raw_results, list):
-                    batches.append(
-                        [item for item in raw_results if isinstance(item, dict)]
-                    )
+                    batches.append([item for item in raw_results if isinstance(item, dict)])
                 else:
                     errors.append("InvalidSearchResponse")
             elif isinstance(outcome, str):
@@ -292,9 +276,7 @@ def build_search_agent(
     answer_middleware[0] = _make_search_answer_prompt(spec)
     answer_middleware.insert(1, SearchHistoryIsolationMiddleware())
     answer_agent = create_agent(
-        model=(
-            answer_model if answer_model is not None else default_registry.get_model()
-        ),
+        model=(answer_model if answer_model is not None else default_registry.get_model()),
         tools=answer_tools,
         middleware=answer_middleware,
         state_schema=SearchAgentState,

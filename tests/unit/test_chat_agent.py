@@ -2,6 +2,7 @@
 
 使用脚本式 FakeChatModel（支持 bind_tools）避免真实模型调用。
 """
+
 import pytest
 from langchain.agents import create_agent
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -11,6 +12,7 @@ from langchain_core.messages import (
     BaseMessage,
     HumanMessage,
     ToolMessage,
+    message_chunk_to_message,
 )
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
@@ -58,13 +60,15 @@ class ScriptedToolModel(BaseChatModel):
             yield ChatGenerationChunk(
                 message=AIMessageChunk(
                     content="",
-                    tool_call_chunks=[{
-                        "name": tc["name"],
-                        "args": str(tc["args"]).replace("'", '"'),
-                        "id": tc["id"],
-                        "index": 0,
-                        "type": "tool_call_chunk",
-                    }],
+                    tool_call_chunks=[
+                        {
+                            "name": tc["name"],
+                            "args": str(tc["args"]).replace("'", '"'),
+                            "id": tc["id"],
+                            "index": 0,
+                            "type": "tool_call_chunk",
+                        }
+                    ],
                 )
             )
 
@@ -148,9 +152,7 @@ async def test_checkpointer_memory_accumulates_across_turns():
     agent = _build_agent(model)
     config = {"configurable": {"thread_id": "t-memory"}}
 
-    await agent.ainvoke(
-        {"messages": [HumanMessage(content="你好")]}, config=config
-    )
+    await agent.ainvoke({"messages": [HumanMessage(content="你好")]}, config=config)
     # 第二轮只发新消息（与 chat.py 的增量发送方式一致），历史由 checkpointer 补全
     result = await agent.ainvoke(
         {"messages": [HumanMessage(content="我刚才说了什么？")]}, config=config
@@ -246,7 +248,7 @@ async def test_streaming_tokens_via_custom_stream():
     agent = _build_agent(model)
 
     tokens = []
-    final_message = None
+    final_chunk = None
     async for mode, payload in agent.astream(
         {"messages": [HumanMessage(content="算一下 2+3")]},
         config={"configurable": {"thread_id": "t-stream"}},
@@ -258,13 +260,18 @@ async def test_streaming_tokens_via_custom_stream():
                 tokens.append(content)
         else:
             chunk, meta = payload
-            if isinstance(chunk, AIMessage) and meta.get("langgraph_node") == "model":
-                final_message = chunk
+            if isinstance(chunk, AIMessageChunk) and meta.get("langgraph_node") == "model":
+                # 同一消息 ID 的 token chunk 需要累加；新 ID 表示工具调用后的新一轮回复。
+                if final_chunk is not None and final_chunk.id == chunk.id:
+                    final_chunk += chunk
+                else:
+                    final_chunk = chunk
 
     # token 级增量（工具调用轮的空 chunk 应被过滤）
     expected_response = '{"content":"答案是 5","charts":[]}'
     assert "".join(tokens) == expected_response
     # 完整消息含工具调用中间轮 + 最终回复，最后一条是最终回复
-    assert final_message is not None
+    assert final_chunk is not None
+    final_message = message_chunk_to_message(final_chunk)
     assert final_message.content == expected_response
     assert not final_message.tool_calls

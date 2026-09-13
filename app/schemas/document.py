@@ -1,9 +1,11 @@
-from pydantic import BaseModel
 from datetime import datetime
+
+from pydantic import BaseModel
 
 
 class DocumentUploadResponse(BaseModel):
     """文档上传接口返回实体"""
+
     document_id: str
     """文档唯一标识ID"""
     filename: str
@@ -16,6 +18,7 @@ class DocumentUploadResponse(BaseModel):
 
 class DocumentRead(BaseModel):
     """文档详情查询返回实体"""
+
     id: str
     """文档唯一主键ID"""
     filename: str

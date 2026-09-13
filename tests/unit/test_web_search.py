@@ -16,9 +16,7 @@ def test_build_tavily_search_tool_with_key():
     assert search.include_images is False
     # topic、时间和域名筛选等参数应继续暴露给模型按请求设置。
     schema_properties = search.args_schema.model_json_schema()["properties"]
-    assert {"topic", "time_range", "include_domains", "exclude_domains"} <= set(
-        schema_properties
-    )
+    assert {"topic", "time_range", "include_domains", "exclude_domains"} <= set(schema_properties)
 
 
 def test_tavily_search_invocation_returns_mocked_sources(monkeypatch):

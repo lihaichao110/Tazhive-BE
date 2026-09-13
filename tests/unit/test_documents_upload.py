@@ -31,9 +31,7 @@ def document_client(client):
         app.dependency_overrides.clear()
 
 
-def test_upload_accepts_xlsx_and_removes_temporary_file(
-    document_client, tmp_path, monkeypatch
-):
+def test_upload_accepts_xlsx_and_removes_temporary_file(document_client, tmp_path, monkeypatch):
     captured_path: Path | None = None
 
     def fake_ingest(file_path, filename, db):

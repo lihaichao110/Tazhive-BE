@@ -1,4 +1,5 @@
 """IntentClassifier 单元测试：结构化分类、超时/异常兜底、prompt 拼装。"""
+
 import asyncio
 
 import pytest

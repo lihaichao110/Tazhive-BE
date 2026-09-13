@@ -1,13 +1,17 @@
 from dataclasses import dataclass
+from typing import Any
+
 from sqlalchemy import text
 from sqlmodel import Session
-from app.services.database import engine
+
 from app.core.logging import logger
+from app.services.database import engine
 
 
 @dataclass
 class RetrievedChunk:
     """向量检索结果载体：携带分块内容与相似度评分，避免给 ORM 模型附加临时属性。"""
+
     content: str
     similarity: float = 0.0
     overlap_score: int = 0
@@ -15,7 +19,9 @@ class RetrievedChunk:
     chunk_index: int | None = None
 
 
-def retrieve_similar_chunks(query_embedding: list[float], top_k: int = 5, session: Session | None = None) -> list[RetrievedChunk]:
+def retrieve_similar_chunks(
+    query_embedding: list[float], top_k: int = 5, session: Session | None = None
+) -> list[RetrievedChunk]:
     """
     使用 pgvector 的余弦相似度检索最相关的文档分块。
     参数：
@@ -42,12 +48,11 @@ def retrieve_similar_chunks(query_embedding: list[float], top_k: int = 5, sessio
             ORDER BY embedding <=> (:embedding)::vector
             LIMIT :top_k
         """)
-        result = session.exec(
-            sql,
-            params={"embedding": embedding_str, "top_k": top_k}
-        ).all()
+        params: dict[str, Any] = {"embedding": embedding_str, "top_k": top_k}
+        # 原生 SQL（text）需走 execute，SQLModel 的 exec 只接受 Select/Update。
+        result = session.execute(sql, params=params).all()
 
-        logger.info(f'向量库结果：{result}')
+        logger.info(f"向量库结果：{result}")
 
         # 构造 RetrievedChunk（轻量载体，不重新加载 embedding，避免大对象）
         chunks = [

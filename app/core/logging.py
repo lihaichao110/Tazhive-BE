@@ -1,6 +1,6 @@
 import logging
 import sys
-from logging.handlers import RotatingFileHandler
+
 
 def setup_logging():
     """初始化日志配置，输出到控制台和文件"""
@@ -22,5 +22,6 @@ def setup_logging():
     # root_logger.addHandler(file_handler)
 
     return root_logger
+
 
 logger = setup_logging()

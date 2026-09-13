@@ -47,7 +47,7 @@ def build_classification_prompt() -> str:
             lines.append(f"  示例：{example}")
     lines.append(
         f"不确定或都不匹配时输出 {DEFAULT_INTENT_ID}。"
-        "返回 JSON：{\"intent\": \"意图id\", \"confidence\": 0到1之间的置信度}。"
+        '返回 JSON：{"intent": "意图id", "confidence": 0到1之间的置信度}。'
     )
     return "\n".join(lines)
 
@@ -80,6 +80,9 @@ class IntentClassifier:
                 ),
                 timeout=self._timeout_seconds,
             )
+            # 结构化输出可能返回 dict 或 IntentResult，统一归一化后再读取字段。
+            if not isinstance(result, IntentResult):
+                result = IntentResult.model_validate(result)
             # 分类器可能返回未注册的意图 id，统一在注册表侧兜底。
             spec = get_intent_spec(result.intent)
             return IntentResult(intent=spec.id, confidence=result.confidence)

@@ -1,4 +1,5 @@
 """ModelRoutingMiddleware 与 MetricsMiddleware 单元测试。"""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -37,9 +38,7 @@ async def test_routing_overrides_model_from_state():
     )
 
     assert captured["model"] is sentinel
-    registry.get_model.assert_called_once_with(
-        "deepseek-v4-flash", {"type": "enabled"}
-    )
+    registry.get_model.assert_called_once_with("deepseek-v4-flash", {"type": "enabled"})
 
 
 @pytest.mark.asyncio
@@ -87,8 +86,14 @@ async def test_metrics_counts_call_and_tokens():
     await mw.awrap_model_call(_make_request({"model": model_label}), handler)
 
     assert _sample_value("app_llm_calls_total", {"model": model_label}) - before_calls == 1
-    assert _sample_value("app_llm_tokens_total", {"model": model_label, "type": "input"}) - before_in == 3
-    assert _sample_value("app_llm_tokens_total", {"model": model_label, "type": "output"}) - before_out == 5
+    assert (
+        _sample_value("app_llm_tokens_total", {"model": model_label, "type": "input"}) - before_in
+        == 3
+    )
+    assert (
+        _sample_value("app_llm_tokens_total", {"model": model_label, "type": "output"}) - before_out
+        == 5
+    )
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
+from collections.abc import Awaitable, Callable
 from logging import getLogger
-from typing import Any, Awaitable, Callable
+from typing import Any, cast
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from tenacity import (
@@ -49,12 +50,11 @@ class ResilienceMiddleware(AgentMiddleware):
         async def _call():
             return await handler(request)
 
-        return await _call()
+        # tenacity 的 @retry 装饰器会丢失返回类型标注，这里显式断言。
+        return cast(ModelResponse[Any], await _call())
 
     def _rotate_on_retry(self, retry_state) -> None:
         """重试前切换到注册表中的下一个模型（故障转移）"""
         exc = retry_state.outcome.exception() if retry_state.outcome else None
-        logger.warning(
-            f"模型调用失败（第 {retry_state.attempt_number} 次）：{exc}，切换模型重试"
-        )
+        logger.warning(f"模型调用失败（第 {retry_state.attempt_number} 次）：{exc}，切换模型重试")
         self.registry.rotate()
