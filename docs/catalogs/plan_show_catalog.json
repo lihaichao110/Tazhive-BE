@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "local://plan_show_catalog.json",
+  "title": "在售方案卡片目录（insurance 意图）",
+  "description": "insurance 意图下发的 A2UI 卡片组件目录。前端必须把这些组件注册进 catalog（registerCatalog），注册时使用的 catalogId 要与后端配置 PLAN_SHOW_CATALOG_ID 完全一致，否则 X-Card 会把未知组件渲染成占位文本。契约说明见 docs/a2ui-plan-cards.md。",
+  "catalogId": "local://plan_show_catalog.json",
+  "components": {
+    "PlanList": {
+      "type": "object",
+      "description": "方案卡片的垂直单列容器",
+      "properties": {
+        "children": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "PlanCard 的组件 id 列表，按后端给出的顺序渲染"
+        }
+      },
+      "required": ["children"]
+    },
+    "PlanCard": {
+      "type": "object",
+      "description": "单张方案卡片；props 已携带全部展示数据，子组件只负责排版",
+      "properties": {
+        "groupCode": { "type": "string", "description": "方案分组编码，全局唯一，可作为 key" },
+        "groupName": { "type": "string", "description": "方案名称" },
+        "title": { "type": "string", "description": "所属分类名称：寿险/健康/年金/万能" },
+        "hasSale": {
+          "type": "string",
+          "enum": ["1", "2"],
+          "description": "是否在售标识，原样透传源数据；如需置灰或打标由前端自行判断"
+        },
+        "children": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "可选子组件：PlanImage、PlanPoints、PlanActions；缺失项不会出现在数组中"
+        }
+      },
+      "required": ["groupCode", "groupName", "title", "hasSale", "children"]
+    },
+    "PlanImage": {
+      "type": "object",
+      "description": "方案配图；源数据缺图时该组件不会下发",
+      "properties": {
+        "url": { "type": "string" },
+        "altText": { "type": "string", "description": "无障碍文案，取方案名称" }
+      },
+      "required": ["url", "altText"]
+    },
+    "PlanPoints": {
+      "type": "object",
+      "description": "方案卖点列表；源数据缺卖点时该组件不会下发",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "卖点文案，源数据的 CRLF 多行文本已按行拆分"
+        }
+      },
+      "required": ["items"]
+    },
+    "PlanActions": {
+      "type": "object",
+      "description": "按钮容器：预核保 + 正式投保",
+      "properties": {
+        "children": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "两个 PlanActionButton 的组件 id"
+        }
+      },
+      "required": ["children"]
+    },
+    "PlanActionButton": {
+      "type": "object",
+      "description": "方案操作按钮。点击后 X-Card 把 action.event 透传给 onAction，context 是字面量（非 {path} 绑定），前端可直接读取 group_code/insur_list",
+      "properties": {
+        "text": { "type": "string" },
+        "backgroundColor": { "type": "string", "description": "预核保 #699bf6，正式投保 #028550" },
+        "color": { "type": "string", "description": "文字颜色，固定 #ffffff" },
+        "borderRadius": { "type": "string", "description": "圆角，如 6px" },
+        "action": { "type": "object", "description": "{event: {name, context}}" }
+      },
+      "required": ["text", "backgroundColor", "color", "borderRadius", "action"]
+    }
+  }
+}

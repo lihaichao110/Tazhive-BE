@@ -12,6 +12,13 @@ def setup_logging():
     root_logger.setLevel(logging.INFO)
 
     # 控制台处理器
+    # Windows 控制台默认编码是 GBK(cp936)，日志里的 emoji/中文会在写出时抛
+    # UnicodeEncodeError。这里把标准输出切到 UTF-8；errors 兜底，即使切换失败
+    # （例如 pytest 替换了 stdout）也只是转义输出，不会让日志处理器崩溃。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+    except (AttributeError, OSError, ValueError):
+        pass
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(logging.Formatter(log_format, datefmt=date_format))
     root_logger.addHandler(console_handler)

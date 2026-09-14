@@ -25,6 +25,13 @@ class ChatAgentState(AgentState):
     intent_confidence: NotRequired[float]
     """意图分类置信度（0~1），目前仅随 SSE 广播给前端，不做控制"""
 
+    x_card: NotRequired[dict[str, Any] | None]
+    """A2UI 卡片信封 {"surfaceId","commands"}，由 insurance 子图查库生成。
+
+    只走「状态 → API 出口」：不写进 checkpoint 消息，避免几十 KB 命令 JSON
+    在后续轮次被反复塞进模型上下文；由 chat.py 追加到正文围栏并随消息落库。
+    """
+
 
 class SearchAgentState(ChatAgentState):
     """搜索子图内部状态；父级 Supervisor 只接收双方共有的字段。"""

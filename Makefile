@@ -16,7 +16,7 @@ migrate-gen:
 
 # 执行全部迁移到最新版本
 migrate-up:
-	bash scripts/init_db.sh
+	uv run alembic upgrade head
 
 # 回退上一个版本
 migrate-downgrade:

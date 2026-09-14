@@ -1,7 +1,8 @@
 """按意图配置构建子 Agent 的工厂。
 
 普通意图使用 create_agent：工厂把请求级基础提示词与该意图的协议拼接，
-并按 IntentSpec 组装工具集与中间件链。search 意图使用专属确定性搜索子图。
+并按 IntentSpec 组装工具集与中间件链。search 与 insurance 意图使用各自的
+确定性服务端子图（联网搜索 / 查库出卡片）。
 横切中间件（指标/重试/模型路由/流式）使用模块级单例；RagMiddleware
 只挂载到 use_rag 的意图上。
 """
@@ -90,10 +91,15 @@ def build_intent_agent(
 
 
 def build_agent_for_intent(spec: IntentSpec):
-    """按意图选择执行管线；search 使用确定性搜索子图，其余沿用通用 Agent。"""
+    """按意图选择执行管线；search / insurance 使用确定性服务端子图，其余沿用通用 Agent。"""
     if spec.id == "search":
-        # 延迟导入避免 search 子图复用本模块中间件工厂时产生循环依赖。
+        # 延迟导入避免子图复用本模块中间件工厂时产生循环依赖。
         from app.core.langgraph.agents.search import build_search_agent
 
         return build_search_agent(spec)
+    if spec.id == "insurance":
+        # 同上：查库出卡片是服务端确定性步骤，不能让模型自由发挥。
+        from app.core.langgraph.agents.insurance import build_insurance_agent
+
+        return build_insurance_agent(spec)
     return build_intent_agent(spec)

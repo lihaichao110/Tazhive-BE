@@ -23,6 +23,10 @@ LLM 服务负责管理与大语言模型的交互，支持多提供商、多模�
   唯一映射源；图节点与分类 prompt 均从注册表动态生成。
 - `agents/factory.py` 为每个 `IntentSpec` 构建独立 `create_agent` 子图，并在
   模型调用前把请求级基础提示词与该意图协议组合。
+- 两个意图不走通用 Agent，而是「服务端确定性步骤 + 模型只负责措辞」的子图：
+  `agents/search.py`（规划 → Tavily → 回答）与 `agents/insurance.py`
+  （查 `plan_shows` 出 A2UI 卡片 → 回答），实现在 `factory.build_agent_for_intent`
+  里按 `spec.id` 分派。
 - checkpointer 仅挂在外层 supervisor；子 Agent 继承同一个 `thread_id` 上下文。
 - `agents/chat_agent.py` 只保留旧 `get_chat_agent()` 导入的兼容封装。
 
@@ -64,11 +68,39 @@ RunnableConfig**，导致 `on_chat_model_stream` 回调、`get_config()`、
 
 - `custom` 通道：token 级增量（content + reasoning_content），转 SSE；
 - `messages` 通道：完整消息（含 tool_calls / usage_metadata），用于落库。
-- `intent_node` 还会向 `custom` 通道发送
-  `{"type":"intent","intent":"...","confidence":...}`，API 原样转成 SSE 帧。
+
+`chat.py` 对 `custom` 载荷做了类型判断：只处理 `AIMessageChunk`，其他结构化
+载荷直接跳过（防止未来新增事件类型时抛 `AttributeError` 并被吞成 error 帧）。
+`intent_node` 目前只把意图写进图状态，不广播意图事件。
 
 上游修复后（模型节点透传 config），`StreamingMiddleware` 可直接从
 middleware 列表移除，`chat.py` 的接收逻辑无需变化。
+
+## insurance 意图：确定性卡片管线
+
+用户表达投保意向（「我想买保险」等）时，产品数据必须来自数据库而不是模型记忆，
+因此该意图由 `agents/insurance.py` 的确定性子图处理：
+
+```
+START → plan_query_node → insurance_answer_node → END
+```
+
+1. `plan_query_node`：`app/services/plans/` 查 `plan_shows`（排序、上限、不过滤
+   `has_sale`），用纯函数 `build_plan_card_envelope` 生成 A2UI v0.9 命令信封
+   `{"surfaceId","commands"}`，写入 `state["x_card"]`。查询失败或没有方案时
+   置 `None` 并记日志，本轮降级为纯文本，不打断对话。
+2. `insurance_answer_node`：`create_agent` 只写 2~3 句自然语言说明。它的动态
+   提示词会把「本轮已下发 N 张卡片」或「未取到方案数据」注入系统提示，避免
+   模型承诺了卡片却没有卡，或凭记忆编造产品与保费。
+
+卡片数据的出口在 `chat.py`：流正常结束后读一次图状态，把 `x_card` 渲染成
+`\`\`\`a2ui` 围栏，作为最后一段正文增量下发（在 stop 帧之前），并拼进落库的
+assistant content。**围栏不写进 checkpoint 消息**——25 张卡的命令 JSON 实测约
+35KB，若进入对话记忆，之后每轮请求都要多烧这些 token；落库则保证历史消息
+重放能复现同样的卡片。
+
+协议细节（组件契约、按钮颜色与 action、围栏解析）见
+[a2ui-plan-cards.md](a2ui-plan-cards.md)。
 
 ## 多模型容灾流程
 

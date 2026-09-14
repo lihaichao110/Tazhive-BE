@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     # -------------------------- 上传文档存放地址 --------------------------
     upload_dir: str = "uploads"
 
+    # -------------------------- 保险方案卡片（A2UI）配置 --------------------------
+    # insurance 意图 createSurface 下发的 catalogId，必须与前端 registerCatalog
+    # 注册的 id 完全一致，否则 X-Card 会把未知组件渲染成占位文本。
+    # 默认用 A2UI 官方基本目录；前端若注册本地目录，改成 local://plan_show_catalog.json
+    plan_show_catalog_id: str = "https://a2ui.org/specification/v0_9/basic_catalog.json"
+
     class Config:
         # 指定读取 .env 文件，会用env内变量覆盖上面类属性的默认值
         env_file = ".env"

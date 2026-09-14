@@ -62,7 +62,7 @@ INTENT_SPECS: dict[str, IntentSpec] = {
             description="通用问答与业务知识咨询：用户想获得解答、说明、介绍等，不明确属于其他意图时也归入此类",
             examples=[
                 "公司的报销流程是什么",
-                "帮我介绍一下你们的产品",
+                "介绍一下你们公司",
                 "DeepSeek 和 GPT 有什么区别",
             ],
             protocol_prompt=CHART_RESPONSE_PROTOCOL_PROMPT,
@@ -99,6 +99,7 @@ INTENT_SPECS: dict[str, IntentSpec] = {
                 "我想给父母买份医疗险，有什么推荐",
                 "重疾险一年大概多少钱",
                 "帮我设计一份家庭保险方案",
+                "你们现在有哪些保险产品在售",
             ],
             protocol_prompt=INSURANCE_PROTOCOL_PROMPT,
             use_rag=False,

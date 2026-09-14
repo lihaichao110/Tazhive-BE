@@ -30,6 +30,7 @@ from app.models.thread import Thread
 from app.models.user import User
 from app.schemas.chat import ChatRequest
 from app.services.database import engine
+from app.services.plans import format_a2ui_fence
 
 logger = getLogger(__name__)
 
@@ -116,6 +117,24 @@ def _accumulate_model_message(
     return incoming
 
 
+async def _read_card_fence(agent, config: RunnableConfig) -> str:
+    """读取本轮图状态里的 A2UI 卡片信封，渲染成正文围栏；没有卡片时返回空串。
+
+    卡片只走「状态 → API 出口」：不写进 checkpoint 消息（否则几十 KB 命令 JSON
+    会在后续轮次被反复塞进模型上下文），但会随 assistant 消息一起落库，
+    使历史消息重放拿到与本次流式输出完全同形的内容。
+    """
+    try:
+        state = await agent.aget_state(config)
+    except Exception as e:
+        logger.warning(f"读取卡片状态失败，本轮不下发卡片：{e}")
+        return ""
+    x_card = (state.values or {}).get("x_card")
+    if isinstance(x_card, dict) and x_card.get("commands"):
+        return format_a2ui_fence(x_card)
+    return ""
+
+
 async def stream_chat_response(
     thread_id: str,
     model: str,
@@ -129,9 +148,12 @@ async def stream_chat_response(
     token 级增量通过 custom 流接收（StreamingMiddleware 用 stream_writer 转发
     模型 chunk，规避 create_agent 不透传 config 导致的回调断链）；
     完整消息（含 tool_calls / usage_metadata，用于落库）通过 messages 流接收。
+    若本轮图状态里有 A2UI 卡片信封（insurance 意图），则在结束标记之前
+    追加一帧正文围栏，并把同一段围栏拼进落库的 content。
     """
     full_content = ""
     final_message: AIMessage | AIMessageChunk | None = None
+    card_fence = ""
     try:
         logger.info(f"流式响应开始：{config}")
         async for _namespace, mode, payload in agent.astream(
@@ -142,6 +164,11 @@ async def stream_chat_response(
         ):
             if mode == "custom":
                 chunk = payload
+                # 只处理 StreamingMiddleware 转发的模型 chunk；其他结构化载荷
+                # （如未来的事件广播）不参与 token 流，跳过而不是抛 AttributeError。
+                if not isinstance(chunk, (AIMessage, AIMessageChunk)):
+                    logger.debug(f"忽略 custom 通道的非模型载荷：type={type(chunk).__name__}")
+                    continue
                 # StreamingMiddleware 转发的 AIMessageChunk 增量
                 delta_content = _extract_text_from_content(chunk.content)
                 # 2. 提取思考推理delta（DeepSeek‑R1等推理模型）
@@ -174,6 +201,9 @@ async def stream_chat_response(
                 if _is_model_node(meta) and isinstance(chunk, (AIMessage, AIMessageChunk)):
                     # messages 模式逐块发送；结束时的空 chunk 也必须合并，不能覆盖正文。
                     final_message = _accumulate_model_message(final_message, chunk)
+        # 卡片围栏在流正常结束后读取（放在 try 内而非 finally，避免客户端断开、
+        # 生成器收尾阶段还要发起异步 IO）
+        card_fence = await _read_card_fence(agent, config)
     except Exception as e:
         # 模型彻底调用失败等异常直接向上抛出，这里统一转成 SSE error 帧，
         # 前端才能看到错误而不是只收到 [DONE]
@@ -181,6 +211,29 @@ async def stream_chat_response(
         error_data = {"error": str(e)}
         yield f"data: {json.dumps(error_data)}\n\n"
     finally:
+        if card_fence:
+            # A2UI 卡片作为最后一段正文增量下发，前端与历史消息拿到同形内容
+            full_content += card_fence
+            fence_data = {
+                "id": str(uuid.uuid4()),
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "role": "assistant",
+                            "content": card_fence,
+                            "reasoning_content": None,
+                        },
+                        "finish_reason": None,
+                        "logprobs": None,
+                    }
+                ],
+            }
+            yield f"data: {json.dumps(fence_data)}\n\n"
+
         # 发送结束标记
         end_data = {
             "id": str(uuid.uuid4()),
@@ -199,8 +252,9 @@ async def stream_chat_response(
             if isinstance(final_message, AIMessageChunk):
                 final_message = cast(AIMessage, message_chunk_to_message(final_message))
             if isinstance(final_message, AIMessage):
-                # 完整保存 assistant 消息
+                # 完整保存 assistant 消息（卡片围栏一并落库，供历史重放）
                 assistant_fields = extract_assistant_message_fields(final_message)
+                assistant_fields["content"] = f"{assistant_fields['content']}{card_fence}"
                 session.add(Message(thread_id=thread_id, role="assistant", **assistant_fields))
             elif full_content:
                 # 降级：只保存文本（但这种情况应避免）
