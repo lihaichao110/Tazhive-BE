@@ -36,6 +36,30 @@
 
 1. **克隆仓库**（如果已存在则跳过）
 
-2. **安装依赖**：
+2. **初始化开发环境**：
+
+   ```bash
+   make setup
+   ```
+
+   该命令会安装项目依赖并启用 Git pre-commit hook。后续仅需同步依赖时，运行：
+
    ```bash
    uv sync
+   ```
+
+3. **启动开发服务器**：
+
+   ```bash
+   make dev
+   ```
+
+### 提交前检查
+
+执行 `git commit` 时，pre-commit hook 会自动运行 Ruff 代码检查和格式化、基础文件检查以及 mypy 类型检查。
+
+需要手动检查仓库中的全部文件时，运行：
+
+```bash
+uv run pre-commit run --all-files
+```
