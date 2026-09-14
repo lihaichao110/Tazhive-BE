@@ -1,40 +1,40 @@
 services:
-  db:
-    image: pgvector/pgvector:pg16
+  app:
+    # 生产环境始终使用 CI 发布的不可变镜像标签，禁止在服务器上临时构建源码。
+    image: ${APP_IMAGE:?请通过 APP_IMAGE 指定待部署镜像}
     restart: unless-stopped
+    init: true
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: ${PG_USER}
-      POSTGRES_PASSWORD: ${PG_PASSWORD}
-      POSTGRES_DB: ${PG_DB}
+      # 两项生产必填配置使用 Compose 校验，缺失时直接拒绝启动。
+      DATABASE_URL: ${DATABASE_URL:?请在服务器 .env 中配置 DATABASE_URL}
+      SECRET_KEY: ${SECRET_KEY:?请在服务器 .env 中配置 SECRET_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-}
+      EMBED_MODEL_NAME: ${EMBED_MODEL_NAME:-}
     ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # 仅允许宿主机上的 Nginx 访问，公网不直接暴露 Uvicorn。
+      - "127.0.0.1:8000:8000"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DB}"]
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)
       interval: 10s
       timeout: 5s
-      retries: 5
-
-  app:
-    build: .
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    environment:
-      # 从宿主机 .env 加载，或直接在此定义
-      DATABASE_URL: ${DATABASE_URL}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
-      # 观测平台
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
-      # 向量配置
-      EMBED_API_KEY: ${EMBED_API_KEY}
-      EMBED_BASE_URL: ${EMBED_BASE_URL}
-      EMBED_MODEL_NAME: ${EMBED_MODEL_NAME}
-    depends_on:
-      db:
-        condition: service_healthy
-
-volumes:
-  postgres_data:
+      retries: 6
+      start_period: 20s
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true

@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -6,8 +6,16 @@ on:
   pull_request:
     branches: [main, develop]
 
+# 默认只授予读取仓库内容的权限；发布镜像的 job 单独申请 packages: write。
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/lihaichao110/tazhive-be
+
 jobs:
   test:
+    name: 代码检查与测试
     runs-on: ubuntu-latest
 
     services:
@@ -20,7 +28,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U agent -d agentdb"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -31,21 +39,118 @@ jobs:
       OPENAI_API_KEY: test-key
 
     steps:
-      - uses: actions/checkout@v4
+      # 固定到 checkout v4.2.2 的提交，避免可移动标签带来的供应链风险。
+      - name: 检出代码
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      # 固定 setup-uv action 与 uv 本身，确保本地和 CI 的锁文件解析行为一致。
+      - name: 安装 uv 和 Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
         with:
-          version: "latest"
+          version: "0.11.26"
+          python-version: "3.11"
+          enable-cache: true
 
-      - name: Set up Python
-        run: uv python install 3.11
-
-      - name: Install dependencies
+      - name: 安装依赖
         run: uv sync --frozen --all-extras
 
-      - name: Run pre-commit
-        run: uv run pre-commit run --all-files
+      - name: 检查数据库迁移
+        run: uv run alembic upgrade head
 
-      - name: Run tests
+      - name: Ruff 代码检查
+        run: uv run ruff check .
+
+      - name: Ruff 格式检查
+        run: uv run ruff format --check .
+
+      - name: mypy 类型检查
+        run: uv run mypy app/
+
+      - name: 运行测试
         run: uv run pytest -v
+
+  build:
+    name: 构建并发布镜像
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # 固定到 setup-buildx-action v3.11.1 的提交。
+      - name: 配置 Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+
+      # 固定到 login-action v3.3.0 的提交。
+      - name: 登录 GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 固定到 build-push-action v6.18.0 的提交。
+      - name: 构建并推送 linux/amd64 镜像
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+  deploy:
+    name: 部署生产环境
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: 检出部署文件
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: 配置 SSH
+        env:
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$PROD_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 0600 ~/.ssh/id_ed25519
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0644 ~/.ssh/known_hosts
+
+      - name: 上传部署配置
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+        run: |
+          ssh -p "$PROD_SSH_PORT" "$PROD_USER@$PROD_HOST" \
+            'install -d -m 0750 /opt/taiwishub'
+          scp -P "$PROD_SSH_PORT" docker-compose.yml scripts/deploy.sh \
+            "$PROD_USER@$PROD_HOST:/opt/taiwishub/"
+
+      - name: 发布并等待健康检查
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          TARGET_IMAGE: ghcr.io/lihaichao110/tazhive-be:${{ github.sha }}
+        run: |
+          ssh -p "$PROD_SSH_PORT" "$PROD_USER@$PROD_HOST" \
+            "bash /opt/taiwishub/deploy.sh '$TARGET_IMAGE'"

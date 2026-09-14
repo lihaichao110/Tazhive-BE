@@ -39,13 +39,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_agents_user_id"), "agents", ["user_id"], unique=False)
-    op.drop_index(op.f("checkpoint_blobs_thread_id_idx"), table_name="checkpoint_blobs")
-    op.drop_table("checkpoint_blobs")
-    op.drop_index(op.f("checkpoint_writes_thread_id_idx"), table_name="checkpoint_writes")
-    op.drop_table("checkpoint_writes")
-    op.drop_table("checkpoint_migrations")
-    op.drop_index(op.f("checkpoints_thread_id_idx"), table_name="checkpoints")
-    op.drop_table("checkpoints")
+    # LangGraph 的 checkpoint 表由运行时自行维护，不属于业务迁移。
     # ### end Alembic commands ###
 
 

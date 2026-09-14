@@ -138,23 +138,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
     op.create_index(op.f("ix_users_username"), "users", ["username"], unique=True)
-    op.drop_index(op.f("checkpoint_writes_thread_id_idx"), table_name="checkpoint_writes")
-    op.drop_table("checkpoint_writes")
-    op.drop_table("checkpoint_migrations")
-    op.drop_index(op.f("checkpoints_thread_id_idx"), table_name="checkpoints")
-    op.drop_table("checkpoints")
-    op.drop_table("store_migrations")
-    op.drop_index(
-        op.f("idx_store_expires_at"),
-        table_name="store",
-        postgresql_where="(expires_at IS NOT NULL)",
-    )
-    op.drop_index(
-        op.f("store_prefix_idx"), table_name="store", postgresql_ops={"prefix": "text_pattern_ops"}
-    )
-    op.drop_table("store")
-    op.drop_index(op.f("checkpoint_blobs_thread_id_idx"), table_name="checkpoint_blobs")
-    op.drop_table("checkpoint_blobs")
+    # LangGraph 的 checkpoint/store 表由运行时自行维护，不属于业务迁移。
     # ### end Alembic commands ###
 
 
