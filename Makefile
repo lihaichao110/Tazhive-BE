@@ -1,14 +1,20 @@
 # Makefile
-.PHONY: help dev test lint lint-fix clean-checkpoints migrate-gen migrate-up migrate-downgrade
+.PHONY: help setup dev test lint lint-fix clean-checkpoints migrate-gen migrate-up migrate-downgrade
 
 help:
 	@echo "可用命令："
+	@echo "  make setup             安装依赖并启用 Git pre-commit hook"
 	@echo "  make dev               启动开发服务器"
 	@echo "  make test              运行测试"
 	@echo "  make lint              运行代码检查"
 	@echo "  make lint-fix          自动修复可安全处理的代码检查问题"
 	@echo "  make migrate-up        初始化数据库（运行迁移）"
 	@echo "  make clean-checkpoints 清理过期 checkpoint"
+
+# 首次初始化开发环境，并让后续提交自动执行项目检查。
+setup:
+	uv sync
+	uv run pre-commit install
 
 # 自动生成迁移，用法：make migrate-gen msg="add user table"
 migrate-gen:
