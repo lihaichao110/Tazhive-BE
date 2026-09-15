@@ -106,8 +106,10 @@ jobs:
             ${{ env.IMAGE_NAME }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: mode=max
-          sbom: true
+          # 阿里云个人版 ACR 不支持 Buildx 证明清单中的 OCI empty media type。
+          # 仅推送标准镜像清单，避免 unknown manifest class 错误。
+          provenance: false
+          sbom: false
 
   deploy:
     name: 部署生产环境
