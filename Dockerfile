@@ -30,19 +30,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
     && rm -rf /var/lib/apt/lists/*
 
-# 从 builder 阶段复制虚拟环境
-COPY --from=builder /app/.venv /app/.venv
+# 复制时直接设置所有者，避免后续递归 chown 再生成一个完整的虚拟环境镜像层。
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 
-# 复制应用代码
-COPY . .
+# 应用源码同样在复制时设置所有者；普通代码发布只会产生体积较小的源码层。
+COPY --chown=appuser:appuser . .
 
 # 设置环境变量
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
-# 上传文件只用于请求期间的临时解析；目录归非 root 用户所有
-RUN mkdir -p uploads && chown -R appuser:appuser /app
+# 上传文件只用于请求期间的临时解析。
+RUN install -d -o appuser -g appuser uploads
 
 USER appuser
 

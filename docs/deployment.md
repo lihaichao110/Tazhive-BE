@@ -1,6 +1,6 @@
 # 生产环境部署
 
-`main` 分支通过检查后，GitHub Actions 会构建 amd64 镜像、推送到 GHCR，并通过 SSH 更新
+`main` 分支通过检查后，GitHub Actions 会构建 amd64 镜像、推送到阿里云 ACR，并通过 SSH 更新
 `agent.lihaichao.cn` 对应的服务器。应用业务密钥只保存在服务器，不经过 GitHub Actions。
 
 ## 1. 初始化服务器
@@ -25,10 +25,11 @@ SECRET_KEY=<足够长的随机字符串>
 openssl rand -hex 32
 ```
 
-若 GHCR 包为私有，使用仅有 `read:packages` 权限的 GitHub classic PAT 在服务器完成一次登录：
+使用阿里云容器镜像服务的固定密码，在部署用户下完成一次登录：
 
 ```bash
-docker login ghcr.io -u lihaichao110
+docker login --username='李海超lhc' \
+  crpi-9b1idnnx82y0du6c.cn-shanghai.personal.cr.aliyuncs.com
 ```
 
 ## 2. 配置 GitHub
@@ -40,6 +41,13 @@ docker login ghcr.io -u lihaichao110
 - `PROD_SSH_PORT`：SSH 端口，例如 `22`。
 - `PROD_SSH_PRIVATE_KEY`：部署专用 Ed25519 私钥。
 - `PROD_KNOWN_HOSTS`：预先核验过的服务器 host key；不要在 workflow 中临时执行 `ssh-keyscan`。
+
+另外在仓库 `Settings → Secrets and variables → Actions` 中创建镜像仓库凭据：
+
+- `ACR_USERNAME`：阿里云容器镜像服务用户名，当前为 `李海超lhc`。
+- `ACR_PASSWORD`：阿里云容器镜像服务的固定密码。
+
+ACR 密码只保存在 GitHub Secret 和服务器 Docker 凭据中，不要写入仓库文件。
 
 在可信网络中生成 `PROD_KNOWN_HOSTS` 后，应通过服务器控制台或云厂商页面核对指纹：
 
@@ -74,7 +82,8 @@ curl --fail https://agent.lihaichao.cn/api/v1/health
 部署脚本会等待容器健康，并在失败时自动恢复 `/opt/taiwishub/.deployed-image` 记录的上一镜像。需要人工回滚时，在服务器执行：
 
 ```bash
-bash /opt/taiwishub/deploy.sh ghcr.io/lihaichao110/tazhive-be:<此前成功的40位提交SHA>
+bash /opt/taiwishub/deploy.sh \
+  crpi-9b1idnnx82y0du6c.cn-shanghai.personal.cr.aliyuncs.com/taiwishub/taiwishub-be:<此前成功的40位提交SHA>
 ```
 
 数据库迁移发生在应用切换前。迁移必须保持向后兼容；包含删除、重命名等破坏性操作时，应先备份数据库并分阶段发布。

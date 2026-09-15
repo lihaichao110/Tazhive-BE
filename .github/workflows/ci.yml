@@ -6,12 +6,13 @@ on:
   pull_request:
     branches: [main, develop]
 
-# 默认只授予读取仓库内容的权限；发布镜像的 job 单独申请 packages: write。
+# 默认只授予读取仓库内容的权限；阿里云 ACR 使用独立账号密码认证。
 permissions:
   contents: read
 
 env:
-  IMAGE_NAME: ghcr.io/lihaichao110/tazhive-be
+  ACR_REGISTRY: crpi-9b1idnnx82y0du6c.cn-shanghai.personal.cr.aliyuncs.com
+  IMAGE_NAME: crpi-9b1idnnx82y0du6c.cn-shanghai.personal.cr.aliyuncs.com/taiwishub/taiwishub-be
 
 jobs:
   test:
@@ -76,7 +77,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     steps:
       - name: 检出代码
@@ -87,12 +87,12 @@ jobs:
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
 
       # 固定到 login-action v3.3.0 的提交。
-      - name: 登录 GHCR
+      - name: 登录阿里云 ACR
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
       # 固定到 build-push-action v6.18.0 的提交。
       - name: 构建并推送 linux/amd64 镜像
@@ -150,7 +150,7 @@ jobs:
           PROD_HOST: ${{ secrets.PROD_HOST }}
           PROD_USER: ${{ secrets.PROD_USER }}
           PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
-          TARGET_IMAGE: ghcr.io/lihaichao110/tazhive-be:${{ github.sha }}
+          TARGET_IMAGE: ${{ env.IMAGE_NAME }}:${{ github.sha }}
         run: |
           ssh -p "$PROD_SSH_PORT" "$PROD_USER@$PROD_HOST" \
             "bash /opt/taiwishub/deploy.sh '$TARGET_IMAGE'"

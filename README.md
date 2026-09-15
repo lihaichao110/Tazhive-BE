@@ -29,7 +29,7 @@
 | 包管理 | uv + pyproject.toml |
 | 部署 | Docker / docker-compose |
 
-生产环境通过 GitHub Actions、GHCR、Docker Compose 和 Nginx 自动发布，初始化步骤与所需 Secrets
+生产环境通过 GitHub Actions、阿里云 ACR、Docker Compose 和 Nginx 自动发布，初始化步骤与所需 Secrets
 见 [生产环境部署文档](docs/deployment.md)。
 
 

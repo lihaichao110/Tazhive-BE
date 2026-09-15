@@ -2,15 +2,15 @@
 
 set -Eeuo pipefail
 
-# 本脚本由 GitHub Actions 在服务器上调用，唯一参数为 commit SHA 对应的完整镜像名。
-readonly TARGET_IMAGE="${1:?用法: deploy.sh <ghcr-image:commit-sha>}"
+# 本脚本由 GitHub Actions 在服务器上调用，唯一参数为 commit SHA 对应的完整 ACR 镜像名。
+readonly TARGET_IMAGE="${1:?用法: deploy.sh <acr-image:commit-sha>}"
 readonly DEPLOY_DIR="${DEPLOY_DIR:-/opt/taiwishub}"
 readonly COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.yml"
 readonly ENV_FILE="${DEPLOY_DIR}/.env"
 readonly STATE_FILE="${DEPLOY_DIR}/.deployed-image"
 readonly LOCK_FILE="${DEPLOY_DIR}/.deploy.lock"
 
-if [[ ! "$TARGET_IMAGE" =~ ^ghcr\.io/lihaichao110/tazhive-be:[0-9a-f]{40}$ ]]; then
+if [[ ! "$TARGET_IMAGE" =~ ^crpi-9b1idnnx82y0du6c\.cn-shanghai\.personal\.cr\.aliyuncs\.com/taiwishub/taiwishub-be:[0-9a-f]{40}$ ]]; then
     echo "拒绝部署非预期镜像: ${TARGET_IMAGE}" >&2
     exit 2
 fi
