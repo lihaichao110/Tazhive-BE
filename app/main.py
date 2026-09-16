@@ -3,8 +3,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
+from app.core.config import settings
 from app.core.langgraph.checkpointer import close_async_checkpointer
 from app.core.limiter import limiter
 from app.core.logging import logger
@@ -35,6 +37,16 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 
 # 添加请求日志中间件
 app.add_middleware(RequestLoggingMiddleware)
+
+# 前端与 API 使用不同子域名，需要允许 Bearer Token 请求及 OPTIONS 预检。
+# Token 通过 Authorization 请求头传递，不需要允许跨域 Cookie 凭证。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # 添加 metrics 端点

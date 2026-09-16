@@ -1,6 +1,7 @@
 from app.models.agent import Agent
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
+from app.models.insurance_application import InsuranceApplication, InsuranceEvent, InsuranceParty
 from app.models.message import Message
 from app.models.plan_show import PlanShow
 from app.models.product import Product
@@ -16,4 +17,7 @@ __all__ = [
     "Agent",
     "Product",
     "PlanShow",
+    "InsuranceApplication",
+    "InsuranceParty",
+    "InsuranceEvent",
 ]

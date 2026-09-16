@@ -81,6 +81,100 @@
         "action": { "type": "object", "description": "{event: {name, context}}" }
       },
       "required": ["text", "backgroundColor", "color", "borderRadius", "action"]
+    },
+    "InsuranceStepLayout": {
+      "type": "object",
+      "description": "投保步骤页面布局容器"
+    },
+    "InsuranceStepIndicator": {
+      "type": "object",
+      "properties": {
+        "current": { "type": "number" },
+        "total": { "type": "number" },
+        "title": { "type": "string" }
+      },
+      "required": ["current", "total", "title"]
+    },
+    "InsuranceForm": {
+      "type": "object",
+      "description": "投保字段布局容器"
+    },
+    "InsuranceFormError": {
+      "type": "object",
+      "properties": { "message": { "type": "string" } }
+    },
+    "InsuranceInput": {
+      "type": "object",
+      "properties": {
+        "field": { "type": "string" },
+        "label": { "type": "string" },
+        "inputType": { "type": "string" },
+        "placeholder": { "type": "string" },
+        "autocomplete": { "type": "string" },
+        "bindingPath": { "type": "string" },
+        "value": {},
+        "error": {},
+        "disabled": {}
+      },
+      "required": ["field", "label", "bindingPath"]
+    },
+    "InsuranceConsent": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "bindingPath": { "type": "string" },
+        "checked": {},
+        "error": {},
+        "disabled": {}
+      },
+      "required": ["text", "bindingPath"]
+    },
+    "InsuranceRelationshipSelect": {
+      "type": "object",
+      "properties": {
+        "label": { "type": "string" },
+        "bindingPath": { "type": "string" },
+        "value": {},
+        "error": {},
+        "disabled": {},
+        "options": { "type": "array" }
+      },
+      "required": ["label", "bindingPath", "options"]
+    },
+    "InsuranceSameApplicantHint": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "mobile": { "type": "string" },
+        "visible": {}
+      },
+      "required": ["name", "mobile"]
+    },
+    "InsuranceSubmitButton": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "disabled": {},
+        "action": { "type": "object" }
+      },
+      "required": ["text", "action"]
+    },
+    "InsurancePlanSummary": {
+      "type": "object",
+      "properties": {
+        "groupName": { "type": "string" },
+        "title": { "type": "string" },
+        "insurList": { "type": "array" },
+        "applicant": { "type": "object" },
+        "insured": { "type": "object" },
+        "relationship": { "type": "string" }
+      },
+      "required": ["groupName", "title", "insurList", "applicant", "insured", "relationship"]
+    },
+    "InsuranceCompletion": {
+      "type": "object",
+      "properties": { "applicationId": { "type": "string" } },
+      "required": ["applicationId"]
     }
   }
 }

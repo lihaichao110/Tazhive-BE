@@ -177,13 +177,15 @@ SSE 流式过程中，围栏是**最后一段正文增量**：它之后才是 `f
 const handleAction = (payload: ActionPayload) => {
   if (payload.name === 'plan_pre_underwrite' || payload.name === 'plan_apply') {
     const { group_code, group_name, title, insur_list } = payload.context
-    // 跳转预核保/投保页，或把这些字段回传给 Agent 继续对话
+    // plan_apply 调用线程下的 /insurance/actions 确定性接口；预核保仍沿用聊天流程
   }
 }
 ```
 
 `insur_list` 是险种代码数组（如 `["AYR","AYS","AYT"]`），投保与预核保需要它。
 `plan_shows` 表里**没有详情页 URL**，所以两个按钮不携带链接，去向由前端决定。
+正式投保后的三步表单与事件契约见
+[a2ui-insurance-application.md](a2ui-insurance-application.md)。
 
 ## 五、历史消息重放
 

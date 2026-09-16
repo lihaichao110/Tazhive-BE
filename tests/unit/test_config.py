@@ -17,3 +17,18 @@ def _settings(**overrides) -> Settings:
 def test_tavily_api_key_accepts_empty_and_configured_values():
     assert _settings(tavily_api_key="").tavily_api_key == ""
     assert _settings(tavily_api_key="test-key").tavily_api_key == "test-key"
+
+
+def test_cors_origins_supports_comma_separated_values():
+    settings = _settings(
+        cors_allowed_origins="https://ai.lihaichao.cn, http://localhost:5173,https://ai.lihaichao.cn"
+    )
+
+    assert settings.cors_origins == [
+        "https://ai.lihaichao.cn",
+        "http://localhost:5173",
+    ]
+
+
+def test_empty_cors_config_disallows_cross_origin_requests_by_default():
+    assert _settings(cors_allowed_origins="").cors_origins == []

@@ -52,6 +52,25 @@ class Settings(BaseSettings):
     # access_token访问令牌过期时间，单位分钟
     access_token_expire_minutes: int = 60
 
+    # -------------------------- 投保敏感信息加密配置 --------------------------
+    # 独立于 JWT 密钥；未配置时只禁用投保动作接口，不影响普通聊天服务。
+    pii_encryption_key: str | None = None
+
+    # -------------------------- 跨域访问配置 --------------------------
+    # 允许访问 API 的前端 Origin，多个地址使用英文逗号分隔。
+    # 默认为空，未通过环境变量显式配置时不允许任何跨域来源。
+    # Origin 只包含协议、域名和端口，末尾不要添加路径或斜杠。
+    cors_allowed_origins: str = ""
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """将逗号分隔的 Origin 配置转换为 CORS 中间件所需的列表。"""
+        return list(
+            dict.fromkeys(
+                origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()
+            )
+        )
+
     # -------------------------- 各大LLM大模型API密钥 --------------------------
     # OpenAI系列接口密钥，为None时不启用该模型
     openai_api_key: str | None = None

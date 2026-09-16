@@ -22,8 +22,10 @@
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
 | `SECRET_KEY` | `change-me-in-production` | JWT 签名密钥 |
+| `PII_ENCRYPTION_KEY` | 空 | 投保人员资料 Fernet 加密密钥；为空时投保动作接口不可用 |
 | `ALGORITHM` | `HS256` | JWT 算法 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | 令牌过期时间（分钟） |
+| `CORS_ALLOWED_ORIGINS` | 空 | 允许跨域访问 API 的前端 Origin，多个值用英文逗号分隔；为空时仅同源请求可用 |
 
 ## LLM API Keys
 
