@@ -34,17 +34,32 @@ def _envelope(
     }
 
 
-def _person_fields(*, include_consent: bool) -> tuple[list[str], list[dict[str, Any]]]:
+def _gender_field() -> dict[str, Any]:
+    return {
+        "id": "field_gender",
+        "component": "InsuranceGenderRadio",
+        "label": "性别",
+        "options": [
+            {"label": "男", "value": "MALE"},
+            {"label": "女", "value": "FEMALE"},
+        ],
+        "bindingPath": "form/gender",
+        "value": {"path": "/form/gender"},
+        "error": {"path": "/errors/gender"},
+        "disabled": {"path": "/ui/submitted"},
+    }
+
+
+def _person_fields() -> tuple[list[str], list[dict[str, Any]]]:
     """生成共享身份输入组件；路径值由 XCard data model 在浏览器内解析。"""
+    ids: list[str] = []
+    components: list[dict[str, Any]] = []
     specs = [
         ("name", "姓名", "text", "请输入真实姓名", "name"),
         ("birth_date", "出生日期", "date", "", "bday"),
-        ("occupation", "职业", "text", "请输入职业", "organization-title"),
+        ("occupation", "职业类型", "text", "请输入职业类型", "organization-title"),
         ("mobile", "手机号", "tel", "请输入11位大陆手机号", "tel"),
-        ("id_number", "身份证号", "text", "请输入18位大陆身份证号", "off"),
     ]
-    ids: list[str] = []
-    components: list[dict[str, Any]] = []
     for field, label, input_type, placeholder, autocomplete in specs:
         component_id = f"field_{field}"
         ids.append(component_id)
@@ -60,29 +75,51 @@ def _person_fields(*, include_consent: bool) -> tuple[list[str], list[dict[str, 
                 "bindingPath": f"form/{field}",
                 "value": {"path": f"/form/{field}"},
                 "error": {"path": f"/errors/{field}"},
-                "disabled": {"path": "/ui/person_fields_disabled"},
-            }
-        )
-    if include_consent:
-        ids.append("field_consent")
-        components.append(
-            {
-                "id": "field_consent",
-                "component": "InsuranceConsent",
-                "text": "我已阅读并同意个人信息处理授权及投保须知",
-                "bindingPath": "form/consent",
-                "checked": {"path": "/form/consent"},
-                "error": {"path": "/errors/consent"},
                 "disabled": {"path": "/ui/submitted"},
             }
         )
+        if field == "name":
+            ids.append("field_gender")
+            components.append(_gender_field())
     return ids, components
 
 
+def _relationship_field() -> dict[str, Any]:
+    """投保人第一步中的"投保人是被保人的"关系下拉。"""
+    return {
+        "id": "field_relationship",
+        "component": "InsuranceRelationshipSelect",
+        "label": "投保人是被保人的",
+        "bindingPath": "form/relationship",
+        "value": {"path": "/form/relationship"},
+        "error": {"path": "/errors/relationship"},
+        "disabled": {"path": "/ui/submitted"},
+        "options": [
+            {"label": "本人", "value": "SELF"},
+            {"label": "配偶", "value": "SPOUSE"},
+            {"label": "子女", "value": "CHILD"},
+            {"label": "父母", "value": "PARENT"},
+        ],
+    }
+
+
+def _consent_field() -> dict[str, Any]:
+    return {
+        "id": "field_consent",
+        "component": "InsuranceConsent",
+        "text": "我已阅读并同意个人信息处理授权及投保须知",
+        "bindingPath": "form/consent",
+        "checked": {"path": "/form/consent"},
+        "error": {"path": "/errors/consent"},
+        "disabled": {"path": "/ui/submitted"},
+    }
+
+
 def build_applicant_form(*, application_id: str, version: int, catalog_id: str) -> dict[str, Any]:
-    """构造第一步投保人信息表单。"""
+    """构造第一步投保人信息表单；关系选"本人"时后续被保险人步骤被跳过。"""
     surface_id = f"{INSURANCE_SURFACE_PREFIX}_{application_id}_applicant"
-    field_ids, fields = _person_fields(include_consent=True)
+    field_ids, fields = _person_fields()
+    form_children = [*field_ids, "field_relationship", "field_consent"]
     components: list[dict[str, Any]] = [
         {
             "id": "root",
@@ -96,8 +133,10 @@ def build_applicant_form(*, application_id: str, version: int, catalog_id: str) 
             "total": 3,
             "title": "投保人信息",
         },
-        {"id": "form", "component": "InsuranceForm", "children": field_ids},
+        {"id": "form", "component": "InsuranceForm", "children": form_children},
         *fields,
+        _relationship_field(),
+        _consent_field(),
         {
             "id": "form_error",
             "component": "InsuranceFormError",
@@ -124,25 +163,19 @@ def build_applicant_form(*, application_id: str, version: int, catalog_id: str) 
         surface_id=surface_id,
         catalog_id=catalog_id,
         components=components,
-        data={
-            "form": {},
-            "errors": {},
-            "ui": {"submitted": False, "person_fields_disabled": False},
-        },
+        data={"form": {}, "errors": {}, "ui": {"submitted": False}},
     )
 
 
-def build_insured_form(
-    *, application_id: str, version: int, applicant_masked: dict[str, str], catalog_id: str
-) -> dict[str, Any]:
-    """构造第二步被保险人表单；选本人时服务端复制投保人资料。"""
+def build_insured_form(*, application_id: str, version: int, catalog_id: str) -> dict[str, Any]:
+    """构造第二步被保险人表单；关系已在第一步采集，仅填写人员字段。"""
     surface_id = f"{INSURANCE_SURFACE_PREFIX}_{application_id}_insured"
-    field_ids, fields = _person_fields(include_consent=False)
+    field_ids, fields = _person_fields()
     components: list[dict[str, Any]] = [
         {
             "id": "root",
             "component": "InsuranceStepLayout",
-            "children": ["step", "relationship", "same_hint", "form", "form_error", "submit"],
+            "children": ["step", "form", "form_error", "submit"],
         },
         {
             "id": "step",
@@ -150,28 +183,6 @@ def build_insured_form(
             "current": 2,
             "total": 3,
             "title": "被保险人信息",
-        },
-        {
-            "id": "relationship",
-            "component": "InsuranceRelationshipSelect",
-            "label": "与投保人关系",
-            "bindingPath": "form/relationship",
-            "value": {"path": "/form/relationship"},
-            "error": {"path": "/errors/relationship"},
-            "disabled": {"path": "/ui/submitted"},
-            "options": [
-                {"label": "本人", "value": "SELF"},
-                {"label": "配偶", "value": "SPOUSE"},
-                {"label": "子女", "value": "CHILD"},
-                {"label": "父母", "value": "PARENT"},
-            ],
-        },
-        {
-            "id": "same_hint",
-            "component": "InsuranceSameApplicantHint",
-            "name": applicant_masked["name"],
-            "mobile": applicant_masked["mobile"],
-            "visible": {"path": "/ui/person_fields_disabled"},
         },
         {"id": "form", "component": "InsuranceForm", "children": field_ids},
         *fields,
@@ -201,11 +212,7 @@ def build_insured_form(
         surface_id=surface_id,
         catalog_id=catalog_id,
         components=components,
-        data={
-            "form": {},
-            "errors": {},
-            "ui": {"submitted": False, "person_fields_disabled": False},
-        },
+        data={"form": {}, "errors": {}, "ui": {"submitted": False}},
     )
 
 

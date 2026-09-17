@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from sqlmodel import JSON, Column, Field, String, Text
 
 from app.models.base import BaseModel
@@ -78,3 +80,14 @@ class Message(BaseModel, table=True):
     message_id: str | None = Field(
         sa_column=Column(String(100), nullable=True, default=None, comment="大模型返回的消息唯一id")
     )
+
+
+def ensure_created_after(message: Message, reference: Message) -> None:
+    """保证 message 的 created_at 严格晚于 reference，至少相差 1 微秒。
+
+    同一请求内成对写入 user/assistant 消息时，两次 default_factory 取到的
+    时间戳可能落在同一微秒；消息列表仅按 created_at 排序，时间戳并列时
+    数据库返回顺序不确定，会出现 assistant 排到 user 之前的乱序。
+    """
+    if message.created_at <= reference.created_at:
+        message.created_at = reference.created_at + timedelta(microseconds=1)

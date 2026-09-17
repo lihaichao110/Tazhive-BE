@@ -25,7 +25,7 @@ from app.core.langgraph.graph import get_supervisor_graph
 from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
 from app.core.limiter import limiter
 from app.models.agent import Agent
-from app.models.message import Message
+from app.models.message import Message, ensure_created_after
 from app.models.thread import Thread
 from app.models.user import User
 from app.schemas.chat import ChatRequest
@@ -247,18 +247,26 @@ async def stream_chat_response(
 
         # 保存数据库（独立会话）
         with Session(engine) as session:
+            user_message = None
             if last_user_content:
-                session.add(Message(thread_id=thread_id, role="user", content=last_user_content))
+                user_message = Message(thread_id=thread_id, role="user", content=last_user_content)
+                session.add(user_message)
             if isinstance(final_message, AIMessageChunk):
                 final_message = cast(AIMessage, message_chunk_to_message(final_message))
+            assistant_message = None
             if isinstance(final_message, AIMessage):
                 # 完整保存 assistant 消息（卡片围栏一并落库，供历史重放）
                 assistant_fields = extract_assistant_message_fields(final_message)
                 assistant_fields["content"] = f"{assistant_fields['content']}{card_fence}"
-                session.add(Message(thread_id=thread_id, role="assistant", **assistant_fields))
+                assistant_message = Message(thread_id=thread_id, role="assistant", **assistant_fields)
             elif full_content:
                 # 降级：只保存文本（但这种情况应避免）
-                session.add(Message(thread_id=thread_id, role="assistant", content=full_content))
+                assistant_message = Message(thread_id=thread_id, role="assistant", content=full_content)
+            if assistant_message is not None:
+                if user_message is not None:
+                    # 成对落库时保证 assistant 时间戳严格晚于 user，避免列表排序并列乱序
+                    ensure_created_after(assistant_message, user_message)
+                session.add(assistant_message)
             session.commit()
 
 

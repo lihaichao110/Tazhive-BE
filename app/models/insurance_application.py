@@ -28,7 +28,11 @@ class InsuranceApplication(BaseModel, table=True):
 
 
 class InsuranceParty(BaseModel, table=True):
-    """投保参与人；身份资料整体加密后存储。"""
+    """投保参与人；身份资料整体加密后存储。
+
+    relationship 记录第一步采集的"投保人是被保人的"关系，APPLICANT 与 INSURED
+    两行保存同值；选 SELF 时 INSURED 行直接复制投保人的加密资料。
+    """
 
     __tablename__ = "insurance_parties"
     __table_args__ = (UniqueConstraint("application_id", "party_type"),)

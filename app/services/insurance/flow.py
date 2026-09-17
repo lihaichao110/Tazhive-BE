@@ -9,11 +9,11 @@ from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.models.insurance_application import InsuranceApplication, InsuranceEvent, InsuranceParty
-from app.models.message import Message
+from app.models.message import Message, ensure_created_after
 from app.models.plan_show import PlanShow
 from app.schemas.insurance import InsuranceActionRequest, InsuranceActionResponse
 from app.schemas.message import MessageRead
-from app.services.insurance.security import PIICipher, mask_id_number, mask_mobile, mask_name
+from app.services.insurance.security import PIICipher, mask_mobile, mask_name
 from app.services.insurance.validation import RELATIONSHIPS, validate_person_form
 from app.services.insurance.x_card import (
     build_applicant_form,
@@ -130,8 +130,14 @@ def _masked_person(cipher: PIICipher, party: InsuranceParty) -> dict[str, str]:
     return {
         "name": mask_name(value["name"]),
         "mobile": mask_mobile(value["mobile"]),
-        "id_number": mask_id_number(value["id_number"]),
     }
+
+
+def _normalize_form(value: Any) -> Any:
+    """兼容前端把表单路径解析结果包装在单一 value 字段中的请求。"""
+    if isinstance(value, dict) and set(value) == {"value"} and isinstance(value["value"], dict):
+        return value["value"]
+    return value
 
 
 def _response_messages(
@@ -147,6 +153,8 @@ def _response_messages(
         role="assistant",
         content=f"{assistant_text}{format_a2ui_fence(envelope)}",
     )
+    # 成对消息时间戳强制递增，避免列表接口按 created_at 排序时并列乱序
+    ensure_created_after(assistant_message, user_message)
     return user_message, assistant_message
 
 
@@ -201,8 +209,11 @@ def _handle_applicant(
             current_step=application.current_step,
             version=application.version,
         )
-    form = payload.context.get("form")
+    form = _normalize_form(payload.context.get("form"))
     person, errors = validate_person_form(form)
+    relationship = form.get("relationship") if isinstance(form, dict) else None
+    if relationship not in RELATIONSHIPS:
+        errors["relationship"] = "请选择投保人与被保险人的关系"
     if not isinstance(form, dict) or form.get("consent") is not True:
         errors["consent"] = "请阅读并同意个人信息处理授权及投保须知"
     if errors or person is None:
@@ -210,19 +221,50 @@ def _handle_applicant(
     party = InsuranceParty(
         application_id=application.id,
         party_type="APPLICANT",
+        relationship=relationship,
         encrypted_payload=cipher.encrypt(person),
     )
     session.add(party)
-    application.current_step = INSURED_INFO
-    application.version = 2
     application.consent_version = CONSENT_VERSION
     application.consent_at = datetime.now(UTC)
     application.updated_at = datetime.now(UTC)
-    applicant_masked = _masked_person(cipher, party)
+    if relationship == "SELF":
+        # 投保人即被保险人：复制加密资料并跳过第二步，直达方案确认（版本与 plan_confirm 前置一致）。
+        insured = InsuranceParty(
+            application_id=application.id,
+            party_type="INSURED",
+            relationship=relationship,
+            encrypted_payload=party.encrypted_payload,
+        )
+        session.add(insured)
+        application.current_step = PLAN_CONFIRMATION
+        application.version = 3
+        summary = {
+            "groupName": application.group_name,
+            "title": application.plan_title,
+            "insurList": json.loads(application.insur_list_json),
+            "applicant": _masked_person(cipher, party),
+            "insured": _masked_person(cipher, insured),
+            "relationship": relationship,
+        }
+        envelope = build_plan_confirmation(
+            application_id=application.id,
+            version=application.version,
+            summary=summary,
+            catalog_id=settings.plan_show_catalog_id,
+        )
+        return (
+            application,
+            "已提交投保人信息",
+            "投保人即被保险人，信息已保存，请确认投保方案。",
+            envelope,
+            "advanced",
+        )
+    application.current_step = INSURED_INFO
+    application.version = 2
     envelope = build_insured_form(
         application_id=application.id,
         version=application.version,
-        applicant_masked=applicant_masked,
         catalog_id=settings.plan_show_catalog_id,
     )
     return (
@@ -250,30 +292,26 @@ def _handle_insured(
             current_step=application.current_step,
             version=application.version,
         )
-    form = payload.context.get("form")
-    relationship = form.get("relationship") if isinstance(form, dict) else None
+    form = _normalize_form(payload.context.get("form"))
+    applicant = _load_party(session, application.id, "APPLICANT")
+    relationship = applicant.relationship
     if relationship not in RELATIONSHIPS:
         raise InsuranceFlowError(
             422,
             "validation_failed",
             "请检查被保险人信息",
-            field_errors={"relationship": "请选择与投保人的关系"},
+            field_errors={"relationship": "请选择投保人与被保险人的关系"},
         )
-    applicant = _load_party(session, application.id, "APPLICANT")
-    if relationship == "SELF":
-        encrypted_payload = applicant.encrypted_payload
-    else:
-        person, errors = validate_person_form(form)
-        if errors or person is None:
-            raise InsuranceFlowError(
-                422, "validation_failed", "请检查被保险人信息", field_errors=errors
-            )
-        encrypted_payload = cipher.encrypt(person)
+    person, errors = validate_person_form(form)
+    if errors or person is None:
+        raise InsuranceFlowError(
+            422, "validation_failed", "请检查被保险人信息", field_errors=errors
+        )
     insured = InsuranceParty(
         application_id=application.id,
         party_type="INSURED",
         relationship=relationship,
-        encrypted_payload=encrypted_payload,
+        encrypted_payload=cipher.encrypt(person),
     )
     session.add(insured)
     application.current_step = PLAN_CONFIRMATION

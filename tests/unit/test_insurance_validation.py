@@ -14,28 +14,47 @@ def test_cn_id_card_validates_checksum_and_birth_date():
     assert not validate_cn_id_card("11010519491331002X")
 
 
-def test_person_form_requires_matching_birth_date_and_mainland_mobile():
+def test_person_form_requires_gender_and_mainland_mobile():
     person, errors = validate_person_form(
         {
             "name": "张三",
             "birth_date": "1949-12-30",
             "occupation": "教师",
             "mobile": "12800138000",
-            "id_number": VALID_ID,
         }
     )
     assert person is None
-    assert set(errors) == {"mobile", "id_number"}
+    assert set(errors) == {"gender", "mobile"}
+
+
+def test_person_form_accepts_new_field_set():
+    person, errors = validate_person_form(
+        {
+            "gender": "FEMALE",
+            "name": "张三",
+            "birth_date": "1949-12-31",
+            "occupation": "教师",
+            "mobile": "13800138000",
+        }
+    )
+    assert errors == {}
+    assert person == {
+        "gender": "FEMALE",
+        "name": "张三",
+        "birth_date": "1949-12-31",
+        "occupation": "教师",
+        "mobile": "13800138000",
+    }
 
 
 def test_pii_cipher_round_trip_and_masking():
     cipher = PIICipher(Fernet.generate_key().decode())
     payload = {
+        "gender": "MALE",
         "name": "张三",
         "birth_date": "1949-12-31",
         "occupation": "教师",
         "mobile": "13800138000",
-        "id_number": VALID_ID,
     }
     encrypted = cipher.encrypt(payload)
     assert all(value not in encrypted for value in payload.values())

@@ -141,14 +141,18 @@
       },
       "required": ["label", "bindingPath", "options"]
     },
-    "InsuranceSameApplicantHint": {
+    "InsuranceGenderRadio": {
       "type": "object",
+      "description": "性别单选；options 固定 男=MALE / 女=FEMALE",
       "properties": {
-        "name": { "type": "string" },
-        "mobile": { "type": "string" },
-        "visible": {}
+        "label": { "type": "string" },
+        "bindingPath": { "type": "string" },
+        "value": {},
+        "error": {},
+        "disabled": {},
+        "options": { "type": "array" }
       },
-      "required": ["name", "mobile"]
+      "required": ["label", "bindingPath", "options"]
     },
     "InsuranceSubmitButton": {
       "type": "object",
