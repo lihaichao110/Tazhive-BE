@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlmodel import Session, select
 
-from app.api.deps import get_db
+from app.api.deps import get_current_user, get_db
 from app.core.limiter import limiter
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.user import User
@@ -51,3 +51,14 @@ def login(request: Request, payload: UserLogin, db: Session = Depends(get_db)):
     # 生成令牌
     token = create_access_token(user.id)
     return TokenResponse(access_token=token)
+
+
+@router.get(
+    "/verify",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={401: {"description": "令牌无效、已过期或账号不可用"}},
+)
+def verify_session(response: Response, current_user: User = Depends(get_current_user)) -> None:
+    """校验登录会话：令牌有效返回 204，无效/过期/账号不可用由认证依赖返回 401。"""
+    # 禁止缓存登录态校验结论，避免中间层复用旧结果
+    response.headers["Cache-Control"] = "no-store"

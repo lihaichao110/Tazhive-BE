@@ -7,8 +7,9 @@ from langchain.agents.middleware import ModelRequest, ModelResponse
 from langchain_core.language_models.fake_chat_models import FakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from app.core.config import settings
 from app.core.langgraph.middleware.rag import RagMiddleware
-from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
+from app.core.langgraph.prompts.system_chat import RAG_CONTEXT_RULE_PROMPT, SYSTEM_CHAT_PROMPT
 
 
 def _make_request(messages, state=None):
@@ -28,37 +29,37 @@ def _make_handler(captured):
 
 
 def _patch_rag(finding_contents):
-    """mock embedder / retriever / reranker，检索固定返回 finding_contents"""
+    """mock embedder / 检索，检索固定返回 finding_contents"""
     embedder = AsyncMock()
     embedder.aembed_query.return_value = [0.1, 0.2]
-    chunks = [MagicMock(content=c) for c in finding_contents]
+    retrieve_mock = MagicMock(return_value=[MagicMock(content=c) for c in finding_contents])
     patches = [
         patch("app.core.langgraph.middleware.rag.get_embedder", return_value=embedder),
         patch(
             "app.core.langgraph.middleware.rag.retrieve_similar_chunks",
-            return_value=chunks,
-        ),
-        patch(
-            "app.core.langgraph.middleware.rag.rerank_chunks",
-            side_effect=lambda query, cs: cs,
+            retrieve_mock,
         ),
     ]
-    return embedder, patches
+    return embedder, retrieve_mock, patches
+
+
+def _run(mw, request, captured):
+    async def _inner():
+        await mw.awrap_model_call(request, _make_handler(captured))
+
+    return _inner()
 
 
 @pytest.mark.asyncio
 async def test_rag_injects_findings_into_system_message():
-    embedder, patches = _patch_rag(["chunk-1", "chunk-2"])
+    embedder, _, patches = _patch_rag(["chunk-1", "chunk-2"])
     captured = {}
     mw = RagMiddleware()
 
     for p in patches:
         p.start()
     try:
-        await mw.awrap_model_call(
-            _make_request([HumanMessage(content="什么是 TaiWisHub？")]),
-            _make_handler(captured),
-        )
+        await _run(mw, _make_request([HumanMessage(content="什么是 TaiWisHub？")]), captured)
     finally:
         for p in patches:
             p.stop()
@@ -67,25 +68,50 @@ async def test_rag_injects_findings_into_system_message():
     system_message = captured["request"].system_message
     assert isinstance(system_message, SystemMessage)
     assert system_message.content.startswith(SYSTEM_CHAT_PROMPT)
+    assert RAG_CONTEXT_RULE_PROMPT in system_message.content
     assert "参考资料：" in system_message.content
     assert "chunk-1" in system_message.content and "chunk-2" in system_message.content
 
 
 @pytest.mark.asyncio
-async def test_rag_uses_custom_system_prompt_from_state():
-    embedder, patches = _patch_rag(["chunk-1"])
+async def test_rag_passes_score_threshold_to_retriever():
+    embedder, retrieve_mock, patches = _patch_rag(["chunk-1"])
     captured = {}
     mw = RagMiddleware()
 
     for p in patches:
         p.start()
     try:
-        await mw.awrap_model_call(
+        await _run(mw, _make_request([HumanMessage(content="hi")]), captured)
+    finally:
+        for p in patches:
+            p.stop()
+
+    retrieve_mock.assert_called_once()
+    assert retrieve_mock.call_args.args == ("hi", [0.1, 0.2])
+    kwargs = retrieve_mock.call_args.kwargs
+    assert kwargs["top_k"] == 5
+    assert kwargs["recall_k"] == settings.rag_recall_k
+    assert kwargs["lexical_limit"] == settings.rag_lexical_limit
+    assert kwargs["score_threshold"] == settings.rag_score_threshold
+
+
+@pytest.mark.asyncio
+async def test_rag_uses_custom_system_prompt_from_state():
+    embedder, _, patches = _patch_rag(["chunk-1"])
+    captured = {}
+    mw = RagMiddleware()
+
+    for p in patches:
+        p.start()
+    try:
+        await _run(
+            mw,
             _make_request(
                 [HumanMessage(content="hi")],
                 state={"system_prompt": "你是客服小智"},
             ),
-            _make_handler(captured),
+            captured,
         )
     finally:
         for p in patches:
@@ -97,20 +123,18 @@ async def test_rag_uses_custom_system_prompt_from_state():
 
 @pytest.mark.asyncio
 async def test_rag_skips_retrieval_without_user_message():
-    embedder, patches = _patch_rag(["chunk-1"])
+    embedder, retrieve_mock, patches = _patch_rag(["chunk-1"])
     captured = {}
     mw = RagMiddleware()
 
     for p in patches:
         p.start()
     try:
-        await mw.awrap_model_call(
-            _make_request([AIMessage(content="只有助手消息")]),
-            _make_handler(captured),
-        )
+        await _run(mw, _make_request([AIMessage(content="只有助手消息")]), captured)
     finally:
         for p in patches:
             p.stop()
 
     embedder.aembed_query.assert_not_awaited()
+    retrieve_mock.assert_not_called()
     assert captured["request"].system_message.content == SYSTEM_CHAT_PROMPT

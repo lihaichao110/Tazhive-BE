@@ -23,6 +23,30 @@ class _FakeSession:
         return None
 
 
+def test_build_chunks_keeps_xlsx_row_records_whole():
+    """xlsx 行记录足够短时直接作为 chunk，保持自包含。"""
+    records = [
+        "【工作表: 人员信息表】单位名称: 应用开发一处；员工姓名: 李海超",
+        "【工作表: 人员信息表】单位名称: 人力资源部；员工姓名: 瞿玲",
+    ]
+
+    assert pipeline.build_chunks(records, "xlsx") == records
+
+
+def test_build_chunks_falls_back_to_generic_chunking_for_long_xlsx_record(monkeypatch):
+    """超长行记录回退通用切片，且不再按行拆散。"""
+    long_record = "【工作表: 规范】内容: " + "长" * 1500
+    monkeypatch.setattr(pipeline, "chunk_text", lambda _text: ["chunked-part"])
+
+    assert pipeline.build_chunks([long_record], "xlsx") == ["chunked-part"]
+
+
+def test_build_chunks_uses_generic_chunking_for_other_types(monkeypatch):
+    monkeypatch.setattr(pipeline, "chunk_text", lambda _text: ["chunk-1", "chunk-2"])
+
+    assert pipeline.build_chunks(["source text"], "md") == ["chunk-1", "chunk-2"]
+
+
 def test_ingest_document_rejects_embedding_count_mismatch(monkeypatch):
     """向量数量不一致时标记文档失败，且不留下部分 DocumentChunk。"""
     session = _FakeSession()

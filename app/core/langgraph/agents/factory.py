@@ -102,4 +102,9 @@ def build_agent_for_intent(spec: IntentSpec):
         from app.core.langgraph.agents.insurance import build_insurance_agent
 
         return build_insurance_agent(spec)
+    if spec.id == "data_query":
+        # 同上：生成 → 校验 → 只读执行是服务端确定性管线，SQL 不经模型直接执行。
+        from app.core.langgraph.agents.data_query import build_data_query_agent
+
+        return build_data_query_agent(spec)
     return build_intent_agent(spec)

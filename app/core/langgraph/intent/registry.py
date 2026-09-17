@@ -15,6 +15,7 @@ from langchain_core.tools import BaseTool
 from app.core.langgraph.prompts.system_chat import (
     CHART_ANALYSIS_PROTOCOL_PROMPT,
     CHART_RESPONSE_PROTOCOL_PROMPT,
+    DATA_QUERY_PROTOCOL_PROMPT,
     INSURANCE_PROTOCOL_PROMPT,
     SEARCH_PROTOCOL_PROMPT,
 )
@@ -102,6 +103,22 @@ INTENT_SPECS: dict[str, IntentSpec] = {
                 "你们现在有哪些保险产品在售",
             ],
             protocol_prompt=INSURANCE_PROTOCOL_PROMPT,
+            use_rag=False,
+        ),
+        IntentSpec(
+            id="data_query",
+            description=(
+                "业务数据统计查询：询问数量、排行、占比、分布、汇总等需要查数据库统计的问题，"
+                "如投保单量、确认投保数、方案排行、各状态分布；想要推荐或办理某个产品不算此类"
+            ),
+            examples=[
+                "这个月有多少笔投保单",
+                "P1 分级的产品有几款",
+                "投保量排前三的方案是哪些",
+                "各状态的投保单数量分布",
+                "最近一周每天新增多少投保",
+            ],
+            protocol_prompt=DATA_QUERY_PROTOCOL_PROMPT,
             use_rag=False,
         ),
     ]

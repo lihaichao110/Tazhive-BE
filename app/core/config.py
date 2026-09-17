@@ -99,6 +99,16 @@ class Settings(BaseSettings):
     # 嵌入式模型名称
     embed_model_name: str | None = None
 
+    # -------------------------- RAG 检索配置 --------------------------
+    # 混合检索参数：向量召回扩大候选池后按字面重叠重排，关键词字面命中优先保留。
+    # 向量召回的候选池大小（重排在其上进行）。
+    rag_recall_k: int = 30
+    # 关键词字面召回的单路上限。
+    rag_lexical_limit: int = 10
+    # 纯向量候选的相似度阈值（余弦相似度），低于该分数的 chunk 不注入提示词；
+    # 字面命中的记录不受该阈值约束。设为 0 表示不过滤。
+    rag_score_threshold: float = 0.4
+
     # -------------------------- 上传文档存放地址 --------------------------
     upload_dir: str = "uploads"
 
@@ -107,6 +117,17 @@ class Settings(BaseSettings):
     # 注册的 id 完全一致，否则 X-Card 会把未知组件渲染成占位文本。
     # 默认用 A2UI 官方基本目录；前端若注册本地目录，改成 local://plan_show_catalog.json
     plan_show_catalog_id: str = "https://a2ui.org/specification/v0_9/basic_catalog.json"
+
+    # -------------------------- text2sql 数据查询配置 --------------------------
+    # SQL 生成模型；生成阶段要准确率优先，回答节点仍按请求 state 正常路由模型。
+    text2sql_model: str = "deepseek-v4-pro"
+    # 单次查询返回的最大行数，同时是 SQL 强制 LIMIT 的上限。
+    text2sql_max_rows: int = 50
+    # 查询执行超时时间（PostgreSQL statement_timeout，SQLite 测试环境跳过），单位秒。
+    text2sql_statement_timeout_seconds: float = 5.0
+    # 可选的只读数据库连接串；配置后数据查询走独立只读 engine，
+    # 未配置时用主库 engine，安全依赖 sqlglot 白名单校验。
+    text2sql_readonly_database_url: str | None = None
 
     class Config:
         # 指定读取 .env 文件，会用env内变量覆盖上面类属性的默认值

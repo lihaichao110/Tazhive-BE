@@ -4,10 +4,10 @@ from typing import Any, cast
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
+from app.core.config import settings
+from app.core.langgraph.prompts.system_chat import RAG_CONTEXT_RULE_PROMPT, SYSTEM_CHAT_PROMPT
 from app.core.logging import logger
 from app.services.rag.embedder import get_embedder
-from app.services.rag.reranker import rerank_chunks
 from app.services.rag.retriever import retrieve_similar_chunks
 
 
@@ -40,7 +40,9 @@ class RagMiddleware(AgentMiddleware):
 
         if findings:
             rag_context = "\n\n".join(findings)
-            system_prompt = f"{system_prompt}\n\n参考资料：\n{rag_context}"
+            system_prompt = (
+                f"{system_prompt}\n\n{RAG_CONTEXT_RULE_PROMPT}\n\n参考资料：\n{rag_context}"
+            )
 
         return await handler(request.override(system_message=SystemMessage(content=system_prompt)))
 
@@ -59,8 +61,14 @@ class RagMiddleware(AgentMiddleware):
         embedder = get_embedder()
         query_embedding = await embedder.aembed_query(query)
 
-        chunks = retrieve_similar_chunks(query_embedding, top_k=self.top_k)
-        chunks = rerank_chunks(query, chunks)
+        chunks = retrieve_similar_chunks(
+            query,
+            query_embedding,
+            top_k=self.top_k,
+            recall_k=settings.rag_recall_k,
+            lexical_limit=settings.rag_lexical_limit,
+            score_threshold=settings.rag_score_threshold,
+        )
 
         findings = [chunk.content for chunk in chunks]
         logger.info(f"RAG 检索 {len(findings)} chunks for query: {query[:50]}...")

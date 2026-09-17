@@ -9,6 +9,28 @@ from app.services.rag.chunker import chunk_text
 from app.services.rag.embedder import get_embedder
 from app.services.rag.loader import load_document
 
+# Excel 行记录的自包含长度上限：不超过该长度时直接作为 chunk，避免通用切片
+# 在记录内部的句读处再次截断；超长记录回退通用切片。
+_XLSX_ROW_CHUNK_LIMIT = 1000
+
+
+def build_chunks(texts: list[str], file_type: str) -> list[str]:
+    """按文件类型把加载文本转换为 chunk 列表。
+
+    xlsx 的加载结果已是行级自包含记录，直接作为 chunk；其余类型沿用通用切片。
+    """
+    chunks: list[str] = []
+    if file_type == "xlsx":
+        for record in texts:
+            if len(record) <= _XLSX_ROW_CHUNK_LIMIT:
+                chunks.append(record)
+            else:
+                chunks.extend(chunk_text(record))
+        return chunks
+    for text in texts:
+        chunks.extend(chunk_text(text))
+    return chunks
+
 
 def ingest_document(file_path: str, filename: str, db: Session) -> str:
     """处理文档：加载、分块、嵌入、存储，返回 document_id"""
@@ -27,9 +49,7 @@ def ingest_document(file_path: str, filename: str, db: Session) -> str:
 
     try:
         texts = load_document(file_path)
-        all_chunks = []
-        for text in texts:
-            all_chunks.extend(chunk_text(text))
+        all_chunks = build_chunks(texts, doc.file_type)
 
         embedder = get_embedder()
         embeddings = embedder.embed_documents(all_chunks)

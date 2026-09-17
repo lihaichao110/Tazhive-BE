@@ -30,6 +30,7 @@ class ChatAgentState(AgentState):
 
     只走「状态 → API 出口」：不写进 checkpoint 消息，避免几十 KB 命令 JSON
     在后续轮次被反复塞进模型上下文；由 chat.py 追加到正文围栏并随消息落库。
+    单轮生命周期：intent_node 每轮开始先置 None，insurance 轮再写入新信封。
     """
 
 
@@ -44,3 +45,39 @@ class SearchAgentState(ChatAgentState):
 
     search_error: NotRequired[str | None]
     """搜索不可用或失败时提供给回答模型的安全错误说明。"""
+
+
+class InsuranceAgentState(ChatAgentState):
+    """insurance 子图内部状态；父级 Supervisor 只接收双方共有的字段。"""
+
+    plan_filter: NotRequired[dict[str, Any] | None]
+    """筛选条件提取节点产出的结构化条件（category / keywords）。"""
+
+    plan_match: NotRequired[dict[str, Any] | None]
+    """方案查询的命中信息（mode / matched_by / count / available_titles），
+    供回答节点按「全量 / 已筛选 / 零命中」组织说明。"""
+
+
+class DataQueryState(ChatAgentState):
+    """数据查询（text2sql）子图内部状态；父级 Supervisor 只接收双方共有的字段。"""
+
+    sql_draft: NotRequired[str | None]
+    """生成器产出的 SQL 草稿；None 表示不可回答或生成失败。"""
+
+    unanswerable_reason: NotRequired[str | None]
+    """问题超出可查表范围或生成失败时的说明，非空时直接进入回答节点。"""
+
+    sql_error: NotRequired[str | None]
+    """最近一次校验/执行的错误说明，回喂给生成节点重试。"""
+
+    sql_attempts: NotRequired[int]
+    """本轮已生成 SQL 的次数（含首次）。"""
+
+    query_columns: NotRequired[list[str] | None]
+    """执行成功的结果列名，与每行单元格对齐。"""
+
+    query_rows: NotRequired[list[list[Any]] | None]
+    """执行成功的行数据（已 JSON 序列化），仅供本轮回答模型与表格卡片使用。"""
+
+    query_truncated: NotRequired[bool]
+    """实际行数超过上限被截断时为 True。"""

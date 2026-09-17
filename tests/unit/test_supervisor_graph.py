@@ -48,10 +48,6 @@ def _mock_rag_retrieval():
             "app.core.langgraph.middleware.rag.retrieve_similar_chunks",
             return_value=[],
         ),
-        patch(
-            "app.core.langgraph.middleware.rag.rerank_chunks",
-            side_effect=lambda query, chunks: chunks,
-        ),
     ):
         yield
 
