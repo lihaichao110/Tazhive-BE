@@ -27,13 +27,25 @@ class UserLogin(BaseModel):
     """登录明文密码，后端比对哈希校验"""
 
 
+class RefreshRequest(BaseModel):
+    """
+    刷新令牌请求体模型
+    前端仅凭 body 中的 refresh_token 换取新令牌对，不携带 Authorization 头
+    """
+
+    refresh_token: str
+    """登录/上一次刷新时下发的刷新令牌"""
+
+
 class TokenResponse(BaseModel):
     """
     JWT登录成功返回token响应模型
-    OAuth2 标准返回格式
+    OAuth2 标准返回格式，必须同时下发访问令牌与刷新令牌
     """
 
     access_token: str
     """JWT访问令牌"""
+    refresh_token: str
+    """JWT刷新令牌，用于访问令牌过期后轮换新令牌对，单次有效"""
     token_type: str = "bearer"
     """令牌类型，固定为 bearer"""

@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     # access_token访问令牌过期时间，单位分钟
     access_token_expire_minutes: int = 60
+    # refresh_token刷新令牌过期时间，单位天；每次刷新轮换，旧令牌立即作废
+    refresh_token_expire_days: int = 7
 
     # -------------------------- 投保敏感信息加密配置 --------------------------
     # 独立于 JWT 密钥；未配置时只禁用投保动作接口，不影响普通聊天服务。

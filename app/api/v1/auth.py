@@ -3,9 +3,10 @@ from sqlmodel import Session, select
 
 from app.api.deps import get_current_user, get_db
 from app.core.limiter import limiter
-from app.core.security import create_access_token, get_password_hash, verify_password
+from app.core.security import get_password_hash, verify_password
 from app.models.user import User
-from app.schemas.auth import TokenResponse, UserLogin, UserRegister
+from app.schemas.auth import RefreshRequest, TokenResponse, UserLogin, UserRegister
+from app.services.auth import issue_token_pair, rotate_refresh_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -31,9 +32,8 @@ def register(request: Request, payload: UserRegister, db: Session = Depends(get_
     db.commit()
     db.refresh(user)
 
-    # 生成令牌
-    token = create_access_token(user.id)
-    return TokenResponse(access_token=token)
+    # 注册成功直接登录，下发访问+刷新令牌对
+    return issue_token_pair(db, user)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -48,9 +48,28 @@ def login(request: Request, payload: UserLogin, db: Session = Depends(get_db)):
             detail="用户名或密码不正确",
         )
 
-    # 生成令牌
-    token = create_access_token(user.id)
-    return TokenResponse(access_token=token)
+    # 下发访问+刷新令牌对；前端凭 refresh_token 自动续签
+    return issue_token_pair(db, user)
+
+
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    responses={401: {"description": "刷新令牌缺失、无效、过期或已作废"}},
+)
+@limiter.limit("30/minute")
+def refresh_tokens(request: Request, payload: RefreshRequest, db: Session = Depends(get_db)):
+    """用刷新令牌换取全新令牌对（轮换，旧令牌立即作废）。
+
+    前端不带 Authorization 头调用；任何失败一律 401，由前端判定会话不可恢复。
+    """
+    token_pair = rotate_refresh_token(db, payload.refresh_token)
+    if token_pair is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="刷新令牌无效或已过期，请重新登录",
+        )
+    return token_pair
 
 
 @router.get(
