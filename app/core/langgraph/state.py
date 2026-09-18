@@ -33,6 +33,15 @@ class ChatAgentState(AgentState):
     单轮生命周期：intent_node 每轮开始先置 None，insurance 轮再写入新信封。
     """
 
+    table_markdown: NotRequired[str | None]
+    """data_query 子图生成的查询结果 Markdown 表格。
+
+    与 x_card 同样只走「状态 → API 出口」：由 chat.py 在流结束后并入图表
+    信封的 content 字段并整体重新序列化（前端要求单一合法 JSON 信封，
+    表格不能追加在信封之外），随消息落库保证历史重放与流式输出同形。
+    单轮生命周期：intent_node 每轮开始先置 None。
+    """
+
 
 class SearchAgentState(ChatAgentState):
     """搜索子图内部状态；父级 Supervisor 只接收双方共有的字段。"""

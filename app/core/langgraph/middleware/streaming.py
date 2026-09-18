@@ -68,7 +68,16 @@ class _TapRunnable:
 
 
 class StreamingMiddleware(AgentMiddleware):
-    """恢复 token 级流式输出（配合 astream(stream_mode=["custom", ...])）。"""
+    """恢复 token 级流式输出（配合 astream(stream_mode=["custom", ...])）。
+
+    emit_tokens=False 时只保留 config 上下文修复（回调链 / langfuse 不受影响），
+    不把 token 转发到 custom 流：data_query 回答需要服务端在流结束后把表格
+    并入信封再整帧下发，token 透传会让前端累积的中间内容与最终内容不一致。
+    """
+
+    def __init__(self, emit_tokens: bool = True):
+        super().__init__()
+        self._emit_tokens = emit_tokens
 
     async def awrap_model_call(
         self,
@@ -77,6 +86,8 @@ class StreamingMiddleware(AgentMiddleware):
     ) -> ModelResponse[Any]:
         token = _ensure_config_context()
         try:
+            if not self._emit_tokens:
+                return await handler(request)
             writer = getattr(request.runtime, "stream_writer", None)
             tapped = _TapRunnable(request.model, writer)
             # _TapRunnable 是对模型的结构化替身（实现 bind/bind_tools/ainvoke），

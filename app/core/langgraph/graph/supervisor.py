@@ -54,9 +54,11 @@ def make_intent_node(classifier: IntentClassifier):
         return {
             "intent": spec.id,
             "intent_confidence": result.confidence,
-            # 卡片是单轮产物：每轮开始清掉上一轮残留，否则 insurance 轮的信封
-            # 会在 checkpoint 里跨轮存活，被后续任意意图的回复重复下发
+            # 卡片与查询表格都是单轮产物：每轮开始清掉上一轮残留，否则
+            # insurance 轮的信封 / data_query 轮的表格会在 checkpoint 里
+            # 跨轮存活，被后续任意意图的回复重复下发
             "x_card": None,
+            "table_markdown": None,
         }
 
     return intent_node

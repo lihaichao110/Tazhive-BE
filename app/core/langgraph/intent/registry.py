@@ -53,18 +53,20 @@ INTENT_SPECS: dict[str, IntentSpec] = {
     for spec in [
         IntentSpec(
             id="chitchat",
-            description="闲聊、问候、寒暄，或与业务无关的日常对话",
+            description="闲聊、问候、寒暄、情绪倾诉等无信息诉求的日常对话；只要在询问任何具体信息（人名、事实、资料、概念等），无论语气多口语化（如“那你知道某某么”），都不属于闲聊",
             examples=["你好", "你是谁呀", "今天心情不太好，聊两句"],
             protocol_prompt=None,
             use_rag=False,
         ),
         IntentSpec(
             id="general",
-            description="通用问答与业务知识咨询：用户想获得解答、说明、介绍等，不明确属于其他意图时也归入此类",
+            description="通用问答与业务知识咨询：查询人物、部门、制度等具体资料，或用户想获得解答、说明、介绍等，不明确属于其他意图时也归入此类",
             examples=[
                 "公司的报销流程是什么",
                 "介绍一下你们公司",
                 "DeepSeek 和 GPT 有什么区别",
+                "你知道张三这个人么",
+                "那你知道李四么",
             ],
             protocol_prompt=CHART_RESPONSE_PROTOCOL_PROMPT,
             use_rag=True,

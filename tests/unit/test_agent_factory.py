@@ -111,6 +111,18 @@ def test_registry_injection_replaces_resilience_and_routing():
     assert injected_routing and injected_routing[0].registry is registry
 
 
+def test_stream_tokens_false_swaps_in_non_tap_streaming_instance():
+    """data_query 用的链末位必须换成不透传 token 的独立 StreamingMiddleware 实例，
+    其余共享单例不受影响（emit_tokens 是私有约定，用“非共享实例”固化行为）。"""
+    chain = _build_middleware_chain(get_intent_spec("data_query"), stream_tokens=False)
+
+    streaming = [mw for mw in chain if isinstance(mw, StreamingMiddleware)]
+    assert len(streaming) == 1
+    assert streaming[0] is not _shared_streaming
+    assert any(mw is _shared_metrics for mw in chain)
+    assert any(mw is _shared_resilience for mw in chain)
+
+
 def test_build_intent_agent_compiles_per_spec():
     agent = build_intent_agent(
         get_intent_spec("chitchat"),

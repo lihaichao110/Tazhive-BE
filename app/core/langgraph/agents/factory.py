@@ -49,11 +49,18 @@ _shared_model_routing = ModelRoutingMiddleware()
 _shared_streaming = StreamingMiddleware()
 
 
-def _build_middleware_chain(spec: IntentSpec, registry: LLMRegistry | None = None) -> list:
+def _build_middleware_chain(
+    spec: IntentSpec,
+    registry: LLMRegistry | None = None,
+    *,
+    stream_tokens: bool = True,
+) -> list:
     """按意图组装中间件链（列表靠前为外层）。
 
     Metrics → Rag(仅 use_rag) → Resilience → ModelRouting → Streaming；
     Rag 放 Resilience 外层，模型重试时不重复检索。
+    stream_tokens=False 时末位换成不透传 token 的 StreamingMiddleware，
+    供需要服务端整帧改写最终回答的意图（data_query）使用。
     """
     if registry is not None:
         resilience = ResilienceMiddleware(registry=registry)
@@ -66,7 +73,8 @@ def _build_middleware_chain(spec: IntentSpec, registry: LLMRegistry | None = Non
     middleware: list = [_make_system_prompt_middleware(spec), _shared_metrics]
     if spec.use_rag:
         middleware.append(RagMiddleware())
-    middleware += [resilience, model_routing, _shared_streaming]
+    streaming = _shared_streaming if stream_tokens else StreamingMiddleware(emit_tokens=False)
+    middleware += [resilience, model_routing, streaming]
     return middleware
 
 

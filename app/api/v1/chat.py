@@ -30,6 +30,7 @@ from app.models.thread import Thread
 from app.models.user import User
 from app.schemas.chat import ChatRequest
 from app.services.database import engine
+from app.services.dataquery.table_markdown import merge_table_into_envelope
 from app.services.plans import format_a2ui_fence
 
 logger = getLogger(__name__)
@@ -117,22 +118,43 @@ def _accumulate_model_message(
     return incoming
 
 
-async def _read_card_fence(agent, config: RunnableConfig) -> str:
-    """读取本轮图状态里的 A2UI 卡片信封，渲染成正文围栏；没有卡片时返回空串。
+def _content_chunk_frame(model: str, content: str) -> str:
+    """构造一帧 OpenAI 风格的正文增量 SSE 数据，供卡片围栏、合并表格等收尾载荷复用。"""
+    chunk_data = {
+        "id": str(uuid.uuid4()),
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": content, "reasoning_content": None},
+                "finish_reason": None,
+                "logprobs": None,
+            }
+        ],
+    }
+    return f"data: {json.dumps(chunk_data)}\n\n"
 
-    卡片只走「状态 → API 出口」：不写进 checkpoint 消息（否则几十 KB 命令 JSON
-    会在后续轮次被反复塞进模型上下文），但会随 assistant 消息一起落库，
+
+async def _read_stream_attachments(agent, config: RunnableConfig) -> tuple[str, str]:
+    """流结束后一次读取本轮图状态里的正文附件，返回 (A2UI 围栏, 表格 Markdown)。
+
+    两者都只走「状态 → API 出口」：不写进 checkpoint 消息（否则几十 KB 内容
+    会在后续轮次被反复塞进模型上下文），但会随 assistant 消息一起下发并落库，
     使历史消息重放拿到与本次流式输出完全同形的内容。
     """
     try:
         state = await agent.aget_state(config)
     except Exception as e:
         logger.warning(f"读取卡片状态失败，本轮不下发卡片：{e}")
-        return ""
-    x_card = (state.values or {}).get("x_card")
-    if isinstance(x_card, dict) and x_card.get("commands"):
-        return format_a2ui_fence(x_card)
-    return ""
+        return "", ""
+    values = state.values or {}
+    x_card = values.get("x_card")
+    fence = format_a2ui_fence(x_card) if isinstance(x_card, dict) and x_card.get("commands") else ""
+    table_markdown = values.get("table_markdown")
+    table = table_markdown if isinstance(table_markdown, str) and table_markdown else ""
+    return fence, table
 
 
 async def stream_chat_response(
@@ -148,12 +170,14 @@ async def stream_chat_response(
     token 级增量通过 custom 流接收（StreamingMiddleware 用 stream_writer 转发
     模型 chunk，规避 create_agent 不透传 config 导致的回调断链）；
     完整消息（含 tool_calls / usage_metadata，用于落库）通过 messages 流接收。
-    若本轮图状态里有 A2UI 卡片信封（insurance 意图），则在结束标记之前
-    追加一帧正文围栏，并把同一段围栏拼进落库的 content。
+    收尾附件按意图二选一：insurance 轮的 A2UI 围栏直接追加在正文后；
+    data_query 轮的表格 Markdown 则并入图表信封 content 字段后整帧下发
+    （该意图回答不做 token 透传），两种附件都保证流式与落库同形。
     """
     full_content = ""
     final_message: AIMessage | AIMessageChunk | None = None
     card_fence = ""
+    table_markdown = ""
     try:
         logger.info(f"流式响应开始：{config}")
         async for _namespace, mode, payload in agent.astream(
@@ -201,9 +225,9 @@ async def stream_chat_response(
                 if _is_model_node(meta) and isinstance(chunk, (AIMessage, AIMessageChunk)):
                     # messages 模式逐块发送；结束时的空 chunk 也必须合并，不能覆盖正文。
                     final_message = _accumulate_model_message(final_message, chunk)
-        # 卡片围栏在流正常结束后读取（放在 try 内而非 finally，避免客户端断开、
+        # 正文附件在流正常结束后读取（放在 try 内而非 finally，避免客户端断开、
         # 生成器收尾阶段还要发起异步 IO）
-        card_fence = await _read_card_fence(agent, config)
+        card_fence, table_markdown = await _read_stream_attachments(agent, config)
     except Exception as e:
         # 模型彻底调用失败等异常直接向上抛出，这里统一转成 SSE error 帧，
         # 前端才能看到错误而不是只收到 [DONE]
@@ -211,28 +235,30 @@ async def stream_chat_response(
         error_data = {"error": str(e)}
         yield f"data: {json.dumps(error_data)}\n\n"
     finally:
+        composed_content = ""
         if card_fence:
             # A2UI 卡片作为最后一段正文增量下发，前端与历史消息拿到同形内容
             full_content += card_fence
-            fence_data = {
-                "id": str(uuid.uuid4()),
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": model,
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {
-                            "role": "assistant",
-                            "content": card_fence,
-                            "reasoning_content": None,
-                        },
-                        "finish_reason": None,
-                        "logprobs": None,
-                    }
-                ],
-            }
-            yield f"data: {json.dumps(fence_data)}\n\n"
+            yield _content_chunk_frame(model, card_fence)
+        if table_markdown and final_message is not None and not full_content:
+            # data_query 回答不做 token 透传，这里把表格并入信封 content 后整帧
+            # 下发。not full_content 是防误配守卫：SSE 只能追加，若 token 已被
+            # 透传，前端累积内容无法回退，再下发合并帧只会重复正文。
+            raw_content = final_message.content
+            composed_content = merge_table_into_envelope(
+                raw_content if isinstance(raw_content, str) else str(raw_content),
+                table_markdown,
+            )
+            full_content += composed_content
+            yield _content_chunk_frame(model, composed_content)
+        elif not full_content and final_message is not None:
+            # 兜底：data_query 轮没产出表格（count 类单标量、不可回答、SQL 连续
+            # 失败）时 token 透传又是关闭的，回答文本只能在这里整帧补发，
+            # 否则客户端只收到一个空 stop 帧。
+            fallback_content = _extract_text_from_content(final_message.content)
+            if fallback_content:
+                full_content += fallback_content
+                yield _content_chunk_frame(model, fallback_content)
 
         # 发送结束标记
         end_data = {
@@ -255,13 +281,20 @@ async def stream_chat_response(
                 final_message = cast(AIMessage, message_chunk_to_message(final_message))
             assistant_message = None
             if isinstance(final_message, AIMessage):
-                # 完整保存 assistant 消息（卡片围栏一并落库，供历史重放）
+                # 完整保存 assistant 消息（卡片围栏/合并表格一并落库，供历史重放）
                 assistant_fields = extract_assistant_message_fields(final_message)
-                assistant_fields["content"] = f"{assistant_fields['content']}{card_fence}"
-                assistant_message = Message(thread_id=thread_id, role="assistant", **assistant_fields)
+                if composed_content:
+                    assistant_fields["content"] = composed_content
+                elif card_fence:
+                    assistant_fields["content"] = f"{assistant_fields['content']}{card_fence}"
+                assistant_message = Message(
+                    thread_id=thread_id, role="assistant", **assistant_fields
+                )
             elif full_content:
                 # 降级：只保存文本（但这种情况应避免）
-                assistant_message = Message(thread_id=thread_id, role="assistant", content=full_content)
+                assistant_message = Message(
+                    thread_id=thread_id, role="assistant", content=full_content
+                )
             if assistant_message is not None:
                 if user_message is not None:
                     # 成对落库时保证 assistant 时间戳严格晚于 user，避免列表排序并列乱序

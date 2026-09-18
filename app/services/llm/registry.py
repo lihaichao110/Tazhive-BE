@@ -21,12 +21,17 @@ class LLMRegistry:
         self,
         model_name: str | None = None,
         thinking: dict | None = None,
+        temperature: float | None = None,
     ) -> BaseChatModel:
         if model_name and model_name in self.model_names:
-            return self._get_cached_model(model_name=model_name, thinking=thinking)
+            return self._get_cached_model(
+                model_name=model_name, thinking=thinking, temperature=temperature
+            )
 
         name = self.model_names[self.current_index]
-        return self._get_cached_model(model_name=name, thinking=thinking)
+        return self._get_cached_model(
+            model_name=name, thinking=thinking, temperature=temperature
+        )
 
     def rotate(self):
         """切换到下一个模型（用于故障切换）"""
@@ -37,16 +42,25 @@ class LLMRegistry:
         self,
         model_name: str,
         thinking: dict | None = None,
+        temperature: float | None = None,
     ) -> BaseChatModel:
-        cache_key = f"{model_name}:{json.dumps(thinking, sort_keys=True) if thinking else ''}"
+        parts = [model_name]
+        if thinking:
+            parts.append(json.dumps(thinking, sort_keys=True))
+        if temperature is not None:
+            parts.append(f"temperature={temperature}")
+        cache_key = ":".join(parts)
         if cache_key not in self._cache:
-            self._cache[cache_key] = self._create_model(model_name=model_name, thinking=thinking)
+            self._cache[cache_key] = self._create_model(
+                model_name=model_name, thinking=thinking, temperature=temperature
+            )
         return self._cache[cache_key]
 
     def _create_model(
         self,
         model_name: str,
         thinking: dict | None = None,
+        temperature: float | None = None,
     ) -> BaseChatModel:
         """根据模型名称创建模型实例，使用 OpenAI 兼容接口（DeepSeek 等）"""
         # 这里统一使用 init_chat_model，提供商可根据模型名推断，或显式指定
@@ -55,7 +69,7 @@ class LLMRegistry:
             "model": model_name,
             "model_provider": "deepseek",
             "api_key": settings.deepseek_api_key,
-            "temperature": 0.7,
+            "temperature": temperature if temperature is not None else 0.7,
             "streaming": True,
             # 如果需要 base_url，可在配置中增加，这里暂不处理
         }

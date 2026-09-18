@@ -1,4 +1,4 @@
-"""text2sql 数据查询服务：schema 文档、SQL 静态校验、只读执行与结果表格卡片。"""
+"""text2sql 数据查询服务：schema 文档、SQL 静态校验、只读执行与结果表格 Markdown。"""
 
 from app.services.dataquery.executor import (
     QueryExecutor,
@@ -7,20 +7,20 @@ from app.services.dataquery.executor import (
 )
 from app.services.dataquery.guard import ALLOWED_TABLES, validate_sql
 from app.services.dataquery.schema_doc import SQL_SCHEMA_DOC
-from app.services.dataquery.x_card import (
-    DATA_TABLE_COMPONENT,
-    MAX_CARD_ROWS,
-    build_table_envelope,
+from app.services.dataquery.table_markdown import (
+    MAX_TABLE_ROWS,
+    build_table_markdown,
+    merge_table_into_envelope,
 )
 
 __all__ = [
     "ALLOWED_TABLES",
-    "DATA_TABLE_COMPONENT",
-    "MAX_CARD_ROWS",
+    "MAX_TABLE_ROWS",
     "QueryExecutor",
     "QueryOutcome",
     "SQL_SCHEMA_DOC",
-    "build_table_envelope",
+    "build_table_markdown",
     "default_executor",
+    "merge_table_into_envelope",
     "validate_sql",
 ]

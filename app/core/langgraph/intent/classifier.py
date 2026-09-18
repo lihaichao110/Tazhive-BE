@@ -25,6 +25,9 @@ INTENT_MODEL_NAME = "deepseek-v4-flash"
 INTENT_MODEL_THINKING = {"type": "disabled"}
 """意图分类无需深度推理；关闭 thinking，避免与结构化输出能力冲突。"""
 
+INTENT_MODEL_TEMPERATURE = 0.0
+"""意图分类必须确定性输出：采样随机性会让同一句话在不同轮次路由到不同意图。"""
+
 CLASSIFY_TIMEOUT_SECONDS = 8.0
 """单次分类调用的超时时间；超时直接兜底，不重试。"""
 
@@ -104,6 +107,7 @@ def get_intent_classifier() -> IntentClassifier:
         model = default_registry.get_model(
             INTENT_MODEL_NAME,
             thinking=INTENT_MODEL_THINKING,
+            temperature=INTENT_MODEL_TEMPERATURE,
         )
         _classifier = IntentClassifier(model=model)
     return _classifier

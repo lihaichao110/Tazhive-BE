@@ -1,62 +1,48 @@
-# data_query 意图的数据表格卡片（A2UI v0.9）
+# data_query 意图的数据表格（Markdown 表格并入信封）
 
 用户询问业务数据统计问题（「这个月有多少笔投保单」「投保量排前三的方案」）时，
 后端会识别为 `data_query` 意图，由服务端生成 SQL、经白名单校验后只读执行，
-并把查询结果以 A2UI v0.9 表格卡片的形式放在助手回复正文里。本文是前后端之间
-关于 `DataTable` 组件的契约说明；信封格式、围栏解析方式与
-`a2ui-plan-cards.md` 完全一致，这里只说明差异。
+并把查询结果渲染成 Markdown 表格，并入助手回复信封的 `content` 字段末尾下发。
+本文是前后端之间关于数据表格的契约说明。
+
+> 历史方案：曾以 A2UI v0.9 `DataTable` 组件卡片（```a2ui 围栏）下发。该方案
+> 有两个无法回避的问题：围栏被追加在信封 JSON 之外，破坏「整条消息是单一
+> 合法 JSON」的前端解析契约；且前端采用组件白名单制，未注册的 `DataTable`
+> 会被整卡拒绝。已废弃，仅 `a2ui-plan-cards.md` 描述的保险方案卡片仍在使用
+> A2UI 围栏（其意图为纯文本协议，不经过图表信封）。
 
 ## 一、消息形态
 
-与方案卡片一致：一句自然语言总结 + 空行 + ```a2ui 围栏。围栏同样是 SSE 流的
-最后一段正文增量，前端沿用「累积 `delta.content` 到结束再解析」的现有做法。
-
-- `surfaceId`：**每轮唯一**，形如 `data_table_9c2e41ab`。
-- `catalogId`：与方案卡片相同（`settings.plan_show_catalog_id`，默认 A2UI 官方
-  基本目录）。前端把 `DataTable` 组件注册进同一 catalog 即可。
-- 固定三条命令、顺序固定：`createSurface` → `updateComponents` → `updateDataModel`，
-  每条命令都带 `"version": "v0.9"`。
-
-单标量结果（1 行 1 列，如「共 12 款」）**不下发卡片**，只回正文。
-
-## 二、DataTable 组件
-
-`updateComponents` 的 `components` 数组只有一个根组件，扁平邻接表没有子组件：
+data_query 意图的回复始终是图表协议的 JSON 信封（见 `system_chat.py` 的
+`CHART_RESPONSE_PROTOCOL_PROMPT`）：
 
 ```json
-{
-  "id": "root",
-  "component": "DataTable",
-  "columns": ["group_name", "total"],
-  "rows": [["鸿利悠享2.0两全保险（分红型）", "23"], ["鑫福人生年金保险", "11"]],
-  "truncated": false
-}
+{"content":"正文总结…{{chart:cls}}…\n\n| 产品 | 数量 |\n| --- | --- |\n| A | 3 |","charts":[…]}
 ```
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | 固定 `root` |
-| `component` | string | 固定 `DataTable` |
-| `columns` | string[] | 列名（SQL 结果的原始列名或别名），最多 8 列 |
-| `rows` | string[][] | 行数据，**所有单元格已转字符串**（含数字），每行与 `columns` 对齐，最多 20 行 |
-| `truncated` | boolean | `true` 表示实际结果超过 20 行，表格只展示前 20 行 |
+表格 Markdown 由服务端在流结束后追加到 `content` 字符串末尾（空行分隔），
+再整体重新序列化成合法 JSON 后作为一帧完整正文增量下发。因此该意图的回答
+不做 token 级透传——SSE 只能追加，透传会让前端累积的中间内容与最终合并
+结果不一致。
 
-## 三、updateDataModel
+单标量结果（1 行 1 列，如「共 12 款」）**不下发表格**，只回正文。
 
-```json
-{
-  "surfaceId": "data_table_9c2e41ab",
-  "path": "/ui",
-  "value": { "total": 27, "truncated": true }
-}
-```
+## 二、表格格式（`app/services/dataquery/table_markdown.py`）
 
-`total` 是查询的实际总行数（截断前的受限行数上限内），`truncated` 与组件上
-的同名字段一致；前端可用来渲染「共 27 条，仅展示前 20 条」。
+- 标准 GFM 管道表格：表头行 + `| --- |` 分隔行 + 数据行，前端用 XMarkdown
+  （marked，默认开启 GFM）渲染。
+- 列 = SQL 结果的原始列名或别名，最多 8 列；行最多 20 行，超出时在表格后
+  追加一行引用说明：`> 共 N 行结果，表格仅展示前 20 行。`
+- 单元格规则：
+  - `null` / 空字符串 → `-`；
+  - 布尔值 → `是` / `否`；
+  - 以 `http://` 或 `https://` 开头 → `[链接](URL)`（URL 中的圆括号做
+    百分号转义，避免截断链接语法）；
+  - `|` 转义为 `\|`，换行折叠为空格。
+- 行数据比表头短时自动补 `-`，保证 Markdown 列数一致。
 
-## 四、渲染建议
+## 三、降级行为
 
-- 数字右对齐、文本左对齐可以按 `columns` 的语义（后端无法保证列类型元信息）。
-- 超过 8 列被裁掉时，正文总结仍包含关键数字，可提示用户细化查询列。
-- 前端未注册 `DataTable` 组件时，X-Card 会把未知组件渲染成占位文本；此时正文
-  里的自然语言总结仍然完整，不阻塞功能使用。
+模型输出的信封不合法（非 JSON、或 `content` 字段不是字符串）时，服务端放弃
+合并，按「原文 + 空行 + 表格」拼接下发：前端把整条消息按纯文本降级展示，
+表格内容仍然可见。正常路径不会触发。
