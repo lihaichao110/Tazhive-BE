@@ -25,6 +25,7 @@ services:
       EMBED_API_KEY: ${EMBED_API_KEY:-}
       EMBED_BASE_URL: ${EMBED_BASE_URL:-}
       EMBED_MODEL_NAME: ${EMBED_MODEL_NAME:-}
+      RERANK_MODEL_NAME: ${RERANK_MODEL_NAME:-}
     ports:
       # 仅允许宿主机上的 Nginx 访问，公网不直接暴露 Uvicorn。
       - "127.0.0.1:8000:8000"

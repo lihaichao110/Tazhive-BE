@@ -13,11 +13,12 @@ from app.services.database import engine
 
 @dataclass
 class RetrievedChunk:
-    """向量检索结果载体：携带分块内容与相似度评分，避免给 ORM 模型附加临时属性。"""
+    """检索结果载体：携带分块内容及各阶段评分，避免给 ORM 模型附加临时属性。"""
 
     content: str
     similarity: float = 0.0
     overlap_score: int = 0
+    rerank_score: float | None = None
     document_id: str | None = None
     chunk_index: int | None = None
     id: str | None = None
@@ -138,7 +139,7 @@ def retrieve_similar_chunks(
     session: Session | None = None,
 ) -> list[RetrievedChunk]:
     """
-    混合检索：向量召回 + 关键词字面召回，合并去重后按字面重叠重排。
+    混合检索：向量召回 + 关键词字面召回，合并去重后交给在线模型重排。
     纯向量检索对“按人名/编号查记录”类查询区分度不足（模板化记录的相似度
     高度聚簇），字面命中作为确定性补充。
     参数：
@@ -151,7 +152,7 @@ def retrieve_similar_chunks(
         score_threshold: 纯向量候选的相似度下限，低于该分数的结果被过滤；
             None 或非正数表示不过滤。字面命中的记录不受该阈值约束。
     返回：
-        RetrievedChunk 对象列表（按字面重叠与相似度降序），最多 top_k 条
+        RetrievedChunk 对象列表（在线模型不可用时按字面重叠与相似度降级），最多 top_k 条
     """
     own_session = False
     if session is None:
@@ -228,6 +229,7 @@ def retrieve_similar_chunks(
             f"重排后保留 {len(final)} 条："
             + "; ".join(
                 f"[{'字面' if chunk.id in lexical_ids else '向量'} "
+                f"rerank={chunk.rerank_score if chunk.rerank_score is not None else 'fallback'} "
                 f"overlap={chunk.overlap_score} sim={chunk.similarity:.4f}] {chunk.content[:40]}"
                 for chunk in final
             )

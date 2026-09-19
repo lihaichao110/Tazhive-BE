@@ -13,6 +13,7 @@ description = "泰智汇"
 dependencies = [
     "alembic>=1.19.1",
     "fastapi>=0.141.1",
+    "httpx>=0.28.1",
     "langchain>=1.3.17",
     "langchain-anthropic>=1.6.1",
     "langchain-community>=0.4.2",
@@ -58,7 +59,6 @@ readme = "README.md"
 [dependency-groups]
 dev = [
     "black>=26.5.1",
-    "httpx>=0.28.1",
     "ipython>=8.39.0",
     "mypy>=2.3.1",
     "pre-commit>=4.6.2",

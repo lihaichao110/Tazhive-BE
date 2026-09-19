@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
@@ -61,7 +62,9 @@ class RagMiddleware(AgentMiddleware):
         embedder = get_embedder()
         query_embedding = await embedder.aembed_query(query)
 
-        chunks = retrieve_similar_chunks(
+        # 数据库检索和在线重排均为同步 I/O，放入工作线程避免阻塞事件循环。
+        chunks = await asyncio.to_thread(
+            retrieve_similar_chunks,
             query,
             query_embedding,
             top_k=self.top_k,

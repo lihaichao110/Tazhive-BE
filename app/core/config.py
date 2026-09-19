@@ -175,9 +175,11 @@ class Settings(BaseSettings):
     embed_base_url: str | None = None
     # 嵌入式模型名称
     embed_model_name: str | None = None
+    # 重排序模型名称；地址与密钥复用嵌入式模型平台配置
+    rerank_model_name: str | None = None
 
     # -------------------------- RAG 检索配置 --------------------------
-    # 混合检索参数：向量召回扩大候选池后按字面重叠重排，关键词字面命中优先保留。
+    # 混合检索参数：向量召回扩大候选池后交给在线模型重排，调用失败时按字面重叠降级。
     # 向量召回的候选池大小（重排在其上进行）。
     rag_recall_k: int = 30
     # 关键词字面召回的单路上限。
