@@ -64,7 +64,7 @@ def row_to_model(row: dict[str, Any]):
     # return Agent(
     #     name=row.get("名称"),
     #     description=row.get("描述"),
-    #     model=row.get("模型", "deepseek-v4-flash"),
+    #     model=row.get("模型", settings.llm_default_model),
     #     temperature=float(row.get("温度", 0.7)),
     # )
     raise NotImplementedError("请在 row_to_model() 中实现 Excel 行 → 模型字段 的映射")

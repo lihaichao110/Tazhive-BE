@@ -87,7 +87,7 @@ class PassthroughRegistry:
     def __init__(self, model):
         self.model = model
 
-    def get_model(self, model_name=None, thinking=None):
+    def get_model(self, model_name=None, thinking=None, temperature=None):
         return self.model
 
     def rotate(self):

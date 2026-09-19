@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AgentCreate(BaseModel):
@@ -12,10 +12,10 @@ class AgentCreate(BaseModel):
     """Agent描述信息"""
     system_prompt: str | None = None
     """模型系统提示词"""
-    model: str = "deepseek-v4-flash"
-    """调用的大模型标识"""
-    temperature: float = 0.7
-    """模型温度，控制生成随机性，取值0~1"""
+    model: str | None = None
+    """调用的大模型标识；不传时使用 LLM_DEFAULT_MODEL"""
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    """模型温度；不传时使用 LLM_DEFAULT_TEMPERATURE"""
 
 
 class AgentUpdate(BaseModel):
@@ -29,8 +29,8 @@ class AgentUpdate(BaseModel):
     """模型系统提示词"""
     model: str | None = None
     """调用的大模型标识"""
-    temperature: float | None = None
-    """模型温度，控制生成随机性，取值0~1"""
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    """模型温度，控制生成随机性，取值0~2"""
     is_active: bool | None = None
     """Agent是否启用"""
 
@@ -51,7 +51,7 @@ class AgentRead(BaseModel):
     model: str
     """调用的大模型标识"""
     temperature: float
-    """模型温度，控制生成随机性，取值0~1"""
+    """模型温度，控制生成随机性，取值0~2"""
     is_active: bool
     """Agent是否启用"""
     created_at: datetime

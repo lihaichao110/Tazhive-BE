@@ -33,12 +33,18 @@ async def test_routing_overrides_model_from_state():
         return ModelResponse(result=[AIMessage(content="ok")])
 
     await mw.awrap_model_call(
-        _make_request({"model": "deepseek-v4-flash", "thinking": {"type": "enabled"}}),
+        _make_request(
+            {
+                "model": "deepseek-flash",
+                "thinking": {"type": "enabled"},
+                "temperature": 0.3,
+            }
+        ),
         handler,
     )
 
     assert captured["model"] is sentinel
-    registry.get_model.assert_called_once_with("deepseek-v4-flash", {"type": "enabled"})
+    registry.get_model.assert_called_once_with("deepseek-flash", {"type": "enabled"}, 0.3)
 
 
 @pytest.mark.asyncio
@@ -53,7 +59,7 @@ async def test_routing_falls_back_to_registry_default():
 
     await mw.awrap_model_call(_make_request(), handler)
 
-    registry.get_model.assert_called_once_with(None, None)
+    registry.get_model.assert_called_once_with(None, None, None)
 
 
 def _sample_value(name, labels):

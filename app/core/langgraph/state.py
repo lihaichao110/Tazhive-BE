@@ -13,6 +13,9 @@ class ChatAgentState(AgentState):
     model: NotRequired[str]
     """请求指定的模型名称，经 LLMRegistry 解析"""
 
+    temperature: NotRequired[float]
+    """请求对应的模型温度；自定义 Agent 可覆盖全局默认值"""
+
     thinking: NotRequired[dict | None]
     """思考模式配置，透传给大模型（DeepSeek 的 {"type": "enabled"/"disabled"} 等）"""
 

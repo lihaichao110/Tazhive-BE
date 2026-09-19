@@ -21,6 +21,7 @@ from langfuse.langchain import CallbackHandler
 from sqlmodel import Session
 
 from app.api.deps import get_current_user, get_db
+from app.core.config import settings
 from app.core.langgraph.graph import get_supervisor_graph
 from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
 from app.core.limiter import limiter
@@ -31,6 +32,7 @@ from app.models.user import User
 from app.schemas.chat import ChatRequest
 from app.services.database import engine
 from app.services.dataquery.table_markdown import merge_table_into_envelope
+from app.services.llm.registry import default_registry
 from app.services.plans import format_a2ui_fence
 
 logger = getLogger(__name__)
@@ -330,12 +332,10 @@ async def chat(
             last_user_content = msg.get("content")
             break
 
-    # 获取 supervisor 图（意图识别 + 按注册表路由子 Agent）
-    supervisor = await get_supervisor_graph()
-
     # 默认值：基础身份提示词（协议片段由目标意图 Agent 按需拼接）
     system_prompt = SYSTEM_CHAT_PROMPT
     model_name = payload.model
+    temperature = settings.llm_default_temperature
 
     # 如果指定了 agent_id，则加载 Agent 配置（注意与上面的 supervisor 区分）
     if payload.agent_id:
@@ -347,7 +347,16 @@ async def chat(
             system_prompt = agent_config.system_prompt
         if not payload.model and agent_config.model:
             model_name = agent_config.model
-        # 也可使用 agent_config.temperature 等，但当前未传递
+        temperature = agent_config.temperature
+
+    # 在开始 SSE 响应前完成别名归一化和白名单校验，避免错误被包装成流内异常。
+    try:
+        model_name = default_registry.normalize_model_name(model_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # 模型校验通过后再初始化图，避免无效请求触发不必要的图构建和资源访问。
+    supervisor = await get_supervisor_graph()
 
     config: RunnableConfig = {
         "configurable": {"thread_id": thread_id},
@@ -367,6 +376,7 @@ async def chat(
     input_state = {
         "messages": input_messages,
         "model": model_name,
+        "temperature": temperature,
         "thinking": payload.thinking,
         "system_prompt": system_prompt,
     }
@@ -375,7 +385,7 @@ async def chat(
     return StreamingResponse(
         stream_chat_response(
             thread_id=thread_id,
-            model=model_name or "deepseek-v4-flash",
+            model=model_name,
             agent=supervisor,
             input_state=input_state,
             config=config,

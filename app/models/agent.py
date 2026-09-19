@@ -17,14 +17,8 @@ class Agent(BaseModel, table=True):
     system_prompt: str | None = Field(
         sa_column=Column(String(), nullable=True, comment="系统提示词")
     )
-    model: str = Field(
-        sa_column=Column(
-            String(100), nullable=False, default="deepseek-v4-flash", comment="使用的模型标识"
-        )
-    )
-    temperature: float = Field(
-        sa_column=Column(Float(), nullable=False, default=0.7, comment="模型温度参数")
-    )
+    model: str = Field(sa_column=Column(String(100), nullable=False, comment="使用的模型标识"))
+    temperature: float = Field(sa_column=Column(Float(), nullable=False, comment="模型温度参数"))
     is_active: bool = Field(
         sa_column=Column(Boolean(), nullable=False, default=True, comment="是否启用")
     )

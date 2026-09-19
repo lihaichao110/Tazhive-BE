@@ -1,9 +1,10 @@
 # Makefile
-.PHONY: help setup dev test lint lint-fix format-check format type-check clean-checkpoints migrate-gen migrate-up migrate-downgrade
+.PHONY: help setup config-check dev test lint lint-fix format-check format type-check clean-checkpoints migrate-gen migrate-up migrate-downgrade
 
 help:
 	@echo "可用命令："
 	@echo "  make setup             安装依赖并启用 Git pre-commit hook"
+	@echo "  make config-check      校验 .env 中的应用配置"
 	@echo "  make dev               启动开发服务器"
 	@echo "  make test              运行测试"
 	@echo "  make lint              运行代码检查"
@@ -16,8 +17,14 @@ help:
 
 # 首次初始化开发环境，并让后续提交自动执行项目检查。
 setup:
+	@test -f .env || cp .env.example .env
 	uv sync
 	uv run pre-commit install
+	@echo "请填写 .env 中的必填项，然后运行 make config-check"
+
+# 只加载配置，不连接数据库或外部服务；用于启动前快速发现缺项和模型引用错误。
+config-check:
+	uv run python -c "from app.core.config import settings; print('配置校验通过：', settings.llm_provider, settings.llm_model_names)"
 
 # 自动生成迁移，用法：make migrate-gen msg="add user table"
 migrate-gen:

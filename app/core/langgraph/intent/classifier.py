@@ -12,15 +12,13 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
 from app.core.langgraph.intent.registry import (
     DEFAULT_INTENT_ID,
     INTENT_SPECS,
     get_intent_spec,
 )
 from app.core.logging import logger
-
-INTENT_MODEL_NAME = "deepseek-v4-flash"
-"""分类用的轻量模型（LLMRegistry 注册列表内的低档位模型）。"""
 
 INTENT_MODEL_THINKING = {"type": "disabled"}
 """意图分类无需深度推理；关闭 thinking，避免与结构化输出能力冲突。"""
@@ -105,7 +103,7 @@ def get_intent_classifier() -> IntentClassifier:
 
         # 分类模型固定关闭 thinking；用户为主对话选择的 thinking 模式不受影响。
         model = default_registry.get_model(
-            INTENT_MODEL_NAME,
+            settings.llm_fast_model,
             thinking=INTENT_MODEL_THINKING,
             temperature=INTENT_MODEL_TEMPERATURE,
         )

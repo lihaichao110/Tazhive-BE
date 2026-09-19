@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.api.deps import get_current_user, get_db
+from app.core.config import settings
 from app.models.agent import Agent
 from app.models.user import User
 from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
+from app.services.llm.registry import default_registry
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -15,13 +17,21 @@ def create_agent(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    try:
+        model_name = default_registry.normalize_model_name(payload.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     agent = Agent(
         user_id=current_user.id,
         name=payload.name,
         description=payload.description,
         system_prompt=payload.system_prompt,
-        model=payload.model,
-        temperature=payload.temperature,
+        model=model_name,
+        temperature=(
+            payload.temperature
+            if payload.temperature is not None
+            else settings.llm_default_temperature
+        ),
     )
     db.add(agent)
     db.commit()
@@ -56,7 +66,12 @@ def update_agent(
     if not agent or agent.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    data = payload.dict(exclude_unset=True)
+    data = payload.model_dump(exclude_unset=True)
+    if "model" in data:
+        try:
+            data["model"] = default_registry.normalize_model_name(data["model"])
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     for key, value in data.items():
         setattr(agent, key, value)
 

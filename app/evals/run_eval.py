@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+from app.core.config import settings
+
 # 导入LangGraph supervisor图实例
 from app.core.langgraph.graph import get_supervisor_graph
 
@@ -36,7 +38,8 @@ async def run_evaluation(dataset_path: str):
 
         input_state = {
             "messages": [HumanMessage(content=question)],  # 用户提问消息
-            "model": "deepseek-v4-flash",  # 指定推理模型，实际项目建议从配置文件读取
+            "model": settings.llm_default_model,
+            "temperature": settings.llm_default_temperature,
             "system_prompt": "你是一个乐于助人的助手。",
         }
 

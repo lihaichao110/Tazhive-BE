@@ -23,7 +23,7 @@ from app.core.langgraph.middleware import (
 
 
 class FakeRegistry:
-    def get_model(self, model_name=None, thinking=None):
+    def get_model(self, model_name=None, thinking=None, temperature=None):
         return FakeChatModel()
 
     def rotate(self):
@@ -74,7 +74,7 @@ def test_search_intent_uses_deterministic_search_subgraph(monkeypatch):
     monkeypatch.setattr(
         search_module.default_registry,
         "get_model",
-        lambda model_name=None, thinking=None: FakeChatModel(),
+        lambda model_name=None, thinking=None, temperature=None: FakeChatModel(),
     )
 
     graph = build_agent_for_intent(get_intent_spec("search"))

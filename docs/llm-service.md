@@ -2,18 +2,19 @@
 
 ## 概述
 
-LLM 服务负责管理与大语言模型的交互，支持多提供商、多模型、自动容灾和令牌统计。当前实现以 OpenAI 兼容 API 为主，可扩展支持 Anthropic、通义千问等。Agent 主体由 `langchain.agents.create_agent` 构建，模型统一经 `init_chat_model` 创建。
+LLM 服务负责管理与大语言模型的交互，支持统一提供商配置、多模型自动容灾和令牌统计。Agent 主体由 `langchain.agents.create_agent` 构建，模型统一经 `init_chat_model` 创建。
 
 ## 组件
 
 ### LLMRegistry (`app/services/llm/registry.py`)
 
-- 维护一个模型名称列表。
-- 提供 `get_model(model_name=None, thinking=None)` 方法，返回模型实例。
+- 从 `LLM_MODELS` 维护有序模型名称列表，并从 `LLM_DEFAULT_MODEL` 所在位置开始使用。
+- 提供 `get_model(model_name=None, thinking=None, temperature=None)` 方法，返回模型实例。
   - `thinking` 为思考模式配置（DeepSeek 的 `{"type": "enabled"/"disabled"}` 等），
     经构造参数 `extra_body={"thinking": ...}` 透传给模型。
 - 支持轮询（`rotate()`），用于故障切换。
-- 模型实例缓存（按 model_name + thinking 组合键），避免重复创建实例。
+- 使用 `LLM_MODEL_ALIASES` 兼容旧名称；未知模型直接报错，不再静默回退。
+- 模型实例缓存（按 model_name + thinking + temperature 组合键），避免重复创建实例。
 
 ### Supervisor 与意图 Agent 工厂
 
@@ -104,7 +105,7 @@ assistant content。**围栏不写进 checkpoint 消息**——25 张卡的命�
 
 ## 多模型容灾流程
 
-1. 默认使用注册表中的第一个模型（或请求指定的模型）。
+1. 默认使用 `LLM_DEFAULT_MODEL`（或请求指定的已注册模型）。
 2. 调用失败时，`ResilienceMiddleware` 触发 `rotate()` 切换到下一个模型。
 3. 使用 `tenacity` 进行指数退避重试（最多 3 次尝试）。
 4. 若所有尝试均失败，异常向上冒泡（接口返回 500 / SSE error 帧）。
@@ -120,15 +121,15 @@ conditional edge 会自动生成；无需修改 supervisor 或增加横切中间
 
 - 添加默认工具：在 `app/core/langgraph/tools/` 新增并加入 `tools` 列表；某个
   意图的专用工具直接配置在它的 `IntentSpec.tools`。
-- 添加新提供商：在 `_create_model` 中根据模型名或配置选择不同 `model_provider`。
-- 添加 API Key 管理：可在配置中增加多个密钥，按模型分配。
+- 切换提供商：修改 `LLM_PROVIDER`、`LLM_API_KEY` 和可选 `LLM_BASE_URL`。
 - 官方中间件（`langchain.agents.middleware`）也开箱可用，如
   `SummarizationMiddleware`（长对话自动摘要）、`HumanInTheLoopMiddleware` 等。
 
 ## 相关配置
 
-- `OPENAI_API_KEY`：OpenAI 兼容 API 密钥。
-- `ANTHROPIC_API_KEY`：Anthropic API 密钥（预留）。
-- `QWEN_API_KEY`：通义千问 API 密钥（预留）。
-- `DEEPSEEK_API_KEY`：DeepSeek API 密钥（当前 registry 默认提供商）。
+- `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_BASE_URL`：统一提供商连接配置。
+- `LLM_MODELS`：允许使用的模型及故障切换顺序。
+- `LLM_DEFAULT_MODEL` / `LLM_FAST_MODEL` / `LLM_TEXT2SQL_MODEL`：角色模型。
+- `LLM_DEFAULT_TEMPERATURE`：普通模型默认温度。
+- `LLM_MODEL_ALIASES`：旧模型名兼容映射。
 - `TAVILY_API_KEY`：Tavily 联网搜索密钥；为空时仅禁用搜索调用。

@@ -11,11 +11,33 @@ logger = getLogger(__name__)
 
 
 class LLMRegistry:
-    def __init__(self, model_names: list[str]):
-        self.model_names = model_names
-        self.current_index = 0
+    def __init__(
+        self,
+        model_names: list[str] | None = None,
+        *,
+        default_model: str | None = None,
+        aliases: dict[str, str] | None = None,
+    ):
+        self.model_names = model_names or settings.llm_model_names
+        self.default_model = default_model or settings.llm_default_model
+        self.aliases = aliases if aliases is not None else settings.llm_alias_map
+        self.current_index = self.model_names.index(self.default_model)
         # 模型实例缓存：key 为 (model_name, thinking 的 JSON 串)，避免每次请求都重建
         self._cache: dict[str, BaseChatModel] = {}
+
+    def normalize_model_name(self, model_name: str | None) -> str:
+        """把旧模型别名归一化，并拒绝未注册模型。"""
+        if model_name is None:
+            return self.model_names[self.current_index]
+
+        normalized = self.aliases.get(model_name, model_name)
+        if normalized != model_name:
+            logger.warning("模型名称 %s 已弃用，自动使用 %s", model_name, normalized)
+        if normalized not in self.model_names:
+            raise ValueError(
+                f"不支持的模型 {model_name!r}，可用模型：{', '.join(self.model_names)}"
+            )
+        return normalized
 
     def get_model(
         self,
@@ -23,12 +45,7 @@ class LLMRegistry:
         thinking: dict | None = None,
         temperature: float | None = None,
     ) -> BaseChatModel:
-        if model_name and model_name in self.model_names:
-            return self._get_cached_model(
-                model_name=model_name, thinking=thinking, temperature=temperature
-            )
-
-        name = self.model_names[self.current_index]
+        name = self.normalize_model_name(model_name)
         return self._get_cached_model(model_name=name, thinking=thinking, temperature=temperature)
 
     def rotate(self):
@@ -60,17 +77,18 @@ class LLMRegistry:
         thinking: dict | None = None,
         temperature: float | None = None,
     ) -> BaseChatModel:
-        """根据模型名称创建模型实例，使用 OpenAI 兼容接口（DeepSeek 等）"""
-        # 这里统一使用 init_chat_model，提供商可根据模型名推断，或显式指定
-        # 实际项目中可根据模型名映射到不同提供商
+        """根据统一环境配置创建模型实例。"""
         kwargs: dict[str, Any] = {
             "model": model_name,
-            "model_provider": "deepseek",
-            "api_key": settings.deepseek_api_key,
-            "temperature": temperature if temperature is not None else 0.7,
+            "model_provider": settings.llm_provider,
+            "api_key": settings.llm_api_key.get_secret_value(),
+            "temperature": (
+                temperature if temperature is not None else settings.llm_default_temperature
+            ),
             "streaming": True,
-            # 如果需要 base_url，可在配置中增加，这里暂不处理
         }
+        if settings.llm_base_url:
+            kwargs["base_url"] = settings.llm_base_url
         # 思考模式配置：DeepSeek 等通过 extra_body={"thinking": {...}} 控制思考开关，
         # 例如 {"type": "disabled"} 关闭思考、{"type": "enabled"} 开启思考
         if thinking:
@@ -80,5 +98,5 @@ class LLMRegistry:
         return cast(BaseChatModel, init_chat_model(**kwargs))
 
 
-# 默认注册表：至少包含一个模型，可后续扩展
-default_registry = LLMRegistry(model_names=["deepseek-v4-flash", "deepseek-v4-pro"])
+# 默认注册表完全由环境配置构建，导入应用时即完成合法性校验。
+default_registry = LLMRegistry()

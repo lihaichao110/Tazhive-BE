@@ -41,7 +41,6 @@ from app.services.plans import (
 PLAN_SURFACE_PREFIX = "insurance_plans"
 """surfaceId 前缀；每轮拼随机后缀，避免同一会话多张卡片撞 surfaceId 互相覆盖。"""
 
-PLAN_FILTER_MODEL = "deepseek-v4-flash"
 PLAN_FILTER_TIMEOUT_SECONDS = 8.0
 
 
@@ -69,7 +68,7 @@ class PlanFilterPlanner:
 
     def __init__(self, model=None, timeout_seconds: float = PLAN_FILTER_TIMEOUT_SECONDS):
         planner_model = model or default_registry.get_model(
-            PLAN_FILTER_MODEL,
+            settings.llm_fast_model,
             thinking={"type": "disabled"},
         )
         self._structured = planner_model.with_structured_output(PlanFilter, method="json_mode")

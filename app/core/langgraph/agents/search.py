@@ -15,6 +15,7 @@ from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
 from app.core.langgraph.agents.factory import _build_middleware_chain
 from app.core.langgraph.intent.registry import IntentSpec
 from app.core.langgraph.prompts.system_chat import SYSTEM_CHAT_PROMPT
@@ -23,7 +24,6 @@ from app.core.langgraph.tools import calculator, get_current_time, tavily_search
 from app.core.logging import logger
 from app.services.llm.registry import LLMRegistry, default_registry
 
-SEARCH_PLANNER_MODEL = "deepseek-flash"
 SEARCH_PLANNER_TIMEOUT_SECONDS = 8.0
 MAX_SEARCH_QUERIES = 2
 MAX_SEARCH_RESULTS = 5
@@ -81,7 +81,7 @@ class SearchPlanner:
 
     def __init__(self, model=None, timeout_seconds: float = SEARCH_PLANNER_TIMEOUT_SECONDS):
         planner_model = model or default_registry.get_model(
-            SEARCH_PLANNER_MODEL,
+            settings.llm_fast_model,
             thinking={"type": "disabled"},
         )
         self._structured = planner_model.with_structured_output(

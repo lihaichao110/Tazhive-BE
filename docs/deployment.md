@@ -16,7 +16,11 @@ sudo install -d -m 0750 -o <部署用户> -g <部署用户> /opt/taiwishub
 ```dotenv
 DATABASE_URL=postgresql+psycopg://<用户>:<URL编码后的密码>@<数据库地址>:5432/<数据库名>
 SECRET_KEY=<足够长的随机字符串>
+LLM_API_KEY=<当前 LLM 提供商的密钥>
 ```
+
+`.env.example` 已提供 `LLM_PROVIDER`、模型列表和各角色模型的可用模板；部署时如需
+切换提供商或模型，只修改该文件中的 `LLM_*` 配置，不需要改代码。
 
 `DATABASE_URL` 指向现有外部 PostgreSQL。数据库应安装 pgvector，且防火墙只允许该应用服务器访问。
 可以使用下面的命令生成 JWT 密钥：

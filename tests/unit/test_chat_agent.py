@@ -88,7 +88,7 @@ class PassthroughRegistry:
         self.model = model
         self.last_request = None
 
-    def get_model(self, model_name=None, thinking=None):
+    def get_model(self, model_name=None, thinking=None, temperature=None):
         self.last_request = (model_name, thinking)
         return self.model
 
@@ -210,13 +210,13 @@ async def test_custom_state_fields_reach_middleware():
     await agent.ainvoke(
         {
             "messages": [HumanMessage(content="hi")],
-            "model": "deepseek-v4-flash",
+            "model": "deepseek-flash",
             "thinking": {"type": "enabled"},
         },
         config={"configurable": {"thread_id": "t-state"}},
     )
 
-    assert registry.last_request == ("deepseek-v4-flash", {"type": "enabled"})
+    assert registry.last_request == ("deepseek-flash", {"type": "enabled"})
 
 
 @pytest.mark.asyncio

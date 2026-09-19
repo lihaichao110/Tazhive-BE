@@ -27,5 +27,6 @@ class ModelRoutingMiddleware(AgentMiddleware):
         model = self.registry.get_model(
             cast(str | None, state.get("model")),
             cast(dict | None, state.get("thinking")),
+            cast(float | None, state.get("temperature")),
         )
         return await handler(request.override(model=model))

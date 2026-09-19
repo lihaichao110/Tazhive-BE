@@ -98,13 +98,16 @@ class SqlGenerator:
         timeout_seconds: float = SQL_GENERATOR_TIMEOUT_SECONDS,
     ):
         # 独立于 LLMRegistry 创建：生成 SQL 要零温度，不参与回答链路的模型路由与故障切换
-        generator_model = model or init_chat_model(
-            model=settings.text2sql_model,
-            model_provider="deepseek",
-            api_key=settings.deepseek_api_key,
-            temperature=0.0,
-            extra_body={"thinking": {"type": "disabled"}},
-        )
+        model_kwargs: dict[str, Any] = {
+            "model": settings.llm_text2sql_model,
+            "model_provider": settings.llm_provider,
+            "api_key": settings.llm_api_key.get_secret_value(),
+            "temperature": 0.0,
+            "extra_body": {"thinking": {"type": "disabled"}},
+        }
+        if settings.llm_base_url:
+            model_kwargs["base_url"] = settings.llm_base_url
+        generator_model = model or init_chat_model(**model_kwargs)
         self._structured = generator_model.with_structured_output(SQLDraft, method="json_mode")
         self._timeout_seconds = timeout_seconds
 

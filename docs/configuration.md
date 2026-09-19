@@ -27,14 +27,24 @@
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | 令牌过期时间（分钟） |
 | `CORS_ALLOWED_ORIGINS` | 空 | 允许跨域访问 API 的前端 Origin，多个值用英文逗号分隔；为空时仅同源请求可用 |
 
-## LLM API Keys
+## 统一 LLM 配置
+
+聊天、意图分类、搜索规划、保险筛选和 Text2SQL 共用一套提供商连接配置。
+以下字段缺失、为空或角色引用了未注册模型时，应用会在启动阶段直接失败。
 
 | 变量名 | 必需 | 说明 |
 |--------|------|------|
-| `OPENAI_API_KEY` | 否 | OpenAI 兼容 API 密钥（DeepSeek 等） |
-| `ANTHROPIC_API_KEY` | 否 | Anthropic API 密钥 |
-| `QWEN_API_KEY` | 否 | 通义千问 API 密钥 |
- | `DEEPSEEK_API_KEY` | 否 | deepseek API 密钥 |
+| `LLM_PROVIDER` | 是 | LangChain 模型提供商，例如 `deepseek` |
+| `LLM_API_KEY` | 是 | 当前提供商的 API 密钥 |
+| `LLM_BASE_URL` | 否 | 自定义 API 地址；留空时使用提供商 SDK 默认地址 |
+| `LLM_MODELS` | 是 | 逗号分隔的模型列表，顺序同时作为故障切换顺序 |
+| `LLM_DEFAULT_MODEL` | 是 | 普通对话和新建 Agent 的默认模型，必须位于 `LLM_MODELS` |
+| `LLM_FAST_MODEL` | 是 | 意图分类、搜索规划和保险筛选模型，必须位于 `LLM_MODELS` |
+| `LLM_TEXT2SQL_MODEL` | 是 | SQL 生成模型，必须位于 `LLM_MODELS` |
+| `LLM_DEFAULT_TEMPERATURE` | 是 | 普通模型默认温度，范围 `0`～`2` |
+| `LLM_MODEL_ALIASES` | 否 | 旧模型名到规范名称的 JSON 对象；目标必须位于 `LLM_MODELS` |
+
+修改后可运行 `make config-check`，在连接数据库或模型服务前完成配置校验。
 
 ## 联网搜索
 

@@ -9,7 +9,7 @@ class ChatRequest(BaseModel):
     """
 
     model: str | None = None
-    """前端指定模型，可忽略（后续可支持多模型）"""
+    """前端指定的已注册模型；不传时使用统一默认模型"""
     agent_id: str | None = None
     """指定使用哪个 Agent"""
     thinking: dict[str, Any] | None = None

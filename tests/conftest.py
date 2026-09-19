@@ -6,7 +6,15 @@ from fastapi.testclient import TestClient
 # 在导入应用前设置测试环境变量
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"  # 使用 SQLite 避免需要 PostgreSQL
 os.environ["SECRET_KEY"] = "test-secret-key"
-os.environ["OPENAI_API_KEY"] = "test-openai-key"
+# 测试环境显式提供统一 LLM 配置，避免依赖开发者本地 .env。
+os.environ["LLM_PROVIDER"] = "deepseek"
+os.environ["LLM_API_KEY"] = "test-llm-key"
+os.environ["LLM_MODELS"] = "deepseek-flash,deepseek-v4-pro"
+os.environ["LLM_DEFAULT_MODEL"] = "deepseek-flash"
+os.environ["LLM_FAST_MODEL"] = "deepseek-flash"
+os.environ["LLM_TEXT2SQL_MODEL"] = "deepseek-flash"
+os.environ["LLM_DEFAULT_TEMPERATURE"] = "0.7"
+os.environ["LLM_MODEL_ALIASES"] = '{"deepseek-v4-flash":"deepseek-flash"}'
 # 测试环境显式允许线上前端，确保 CORS 不依赖代码默认值。
 os.environ["CORS_ALLOWED_ORIGINS"] = "https://ai.lihaichao.cn"
 

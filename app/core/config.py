@@ -1,7 +1,9 @@
+import json
 from functools import lru_cache
 
 from dotenv import load_dotenv
-from pydantic_settings import BaseSettings
+from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # pydantic-settings 只会把 .env 读进 Settings 对象，不会写入 os.environ。
 # 而 Langfuse 等 SDK 是直接读 os.environ 的，所以这里手动加载一次，确保两者都生效。
@@ -73,15 +75,88 @@ class Settings(BaseSettings):
             )
         )
 
-    # -------------------------- 各大LLM大模型API密钥 --------------------------
-    # OpenAI系列接口密钥，为None时不启用该模型
-    openai_api_key: str | None = None
-    # Anthropic(Claude)接口密钥，为None时不启用该模型
-    anthropic_api_key: str | None = None
-    # 通义千问qwen接口密钥，为None时不启用该模型
-    qwen_api_key: str | None = None
-    # deepseek接口密钥，为None时不启用该模型
-    deepseek_api_key: str | None = None
+    # -------------------------- 统一 LLM 配置 --------------------------
+    # 所有聊天类模型共用一套提供商连接配置；角色模型必须注册在 llm_models 中。
+    llm_provider: str
+    llm_api_key: SecretStr
+    llm_base_url: str | None = None
+    # 逗号分隔，顺序同时决定模型故障切换顺序。
+    llm_models: str
+    llm_default_model: str
+    llm_fast_model: str
+    llm_text2sql_model: str
+    llm_default_temperature: float = Field(ge=0.0, le=2.0)
+    # JSON 对象，键为旧模型名，值为 llm_models 中的规范模型名。
+    llm_model_aliases: str = "{}"
+
+    @field_validator(
+        "llm_provider",
+        "llm_models",
+        "llm_default_model",
+        "llm_fast_model",
+        "llm_text2sql_model",
+    )
+    @classmethod
+    def validate_non_empty_llm_text(cls, value: str) -> str:
+        """LLM 核心文本配置不允许用空白绕过必填校验。"""
+        value = value.strip()
+        if not value:
+            raise ValueError("LLM 配置不能为空")
+        return value
+
+    @field_validator("llm_api_key")
+    @classmethod
+    def validate_llm_api_key(cls, value: SecretStr) -> SecretStr:
+        """API key 缺失时在应用启动阶段失败，而不是等到首次模型调用。"""
+        if not value.get_secret_value().strip():
+            raise ValueError("LLM_API_KEY 不能为空")
+        return value
+
+    @field_validator("llm_base_url", mode="before")
+    @classmethod
+    def normalize_optional_base_url(cls, value):
+        """允许 .env 用空值表示沿用提供商 SDK 的默认地址。"""
+        return value or None
+
+    @property
+    def llm_model_names(self) -> list[str]:
+        """将逗号分隔的模型注册表转换为保持顺序的列表。"""
+        return [name.strip() for name in self.llm_models.split(",") if name.strip()]
+
+    @property
+    def llm_alias_map(self) -> dict[str, str]:
+        """解析模型兼容别名；格式错误由启动校验统一报告。"""
+        aliases = json.loads(self.llm_model_aliases)
+        return {str(alias).strip(): str(target).strip() for alias, target in aliases.items()}
+
+    @model_validator(mode="after")
+    def validate_llm_registry(self):
+        """确保角色和兼容别名都指向唯一、已注册的模型。"""
+        model_names = self.llm_model_names
+        if not model_names:
+            raise ValueError("LLM_MODELS 至少要配置一个模型")
+        if len(model_names) != len(set(model_names)):
+            raise ValueError("LLM_MODELS 不能包含重复模型")
+
+        for field_name in ("llm_default_model", "llm_fast_model", "llm_text2sql_model"):
+            model_name = getattr(self, field_name)
+            if model_name not in model_names:
+                raise ValueError(f"{field_name.upper()} 必须存在于 LLM_MODELS 中")
+
+        try:
+            aliases = self.llm_alias_map
+        except (json.JSONDecodeError, AttributeError) as exc:
+            raise ValueError("LLM_MODEL_ALIASES 必须是 JSON 对象") from exc
+        if not isinstance(json.loads(self.llm_model_aliases), dict):
+            raise ValueError("LLM_MODEL_ALIASES 必须是 JSON 对象")
+        if any(not alias or not target for alias, target in aliases.items()):
+            raise ValueError("LLM_MODEL_ALIASES 的名称不能为空")
+        invalid_targets = sorted(set(aliases.values()) - set(model_names))
+        if invalid_targets:
+            raise ValueError(
+                "LLM_MODEL_ALIASES 目标必须存在于 LLM_MODELS 中：" + ", ".join(invalid_targets)
+            )
+        return self
 
     # -------------------------- 联网搜索配置 --------------------------
     # Tavily 联网搜索接口密钥；为空时不影响服务启动，搜索工具会返回配置提示
@@ -121,8 +196,6 @@ class Settings(BaseSettings):
     plan_show_catalog_id: str = "https://a2ui.org/specification/v0_9/basic_catalog.json"
 
     # -------------------------- text2sql 数据查询配置 --------------------------
-    # SQL 生成模型；生成阶段要准确率优先，回答节点仍按请求 state 正常路由模型。
-    text2sql_model: str = "deepseek-v4-pro"
     # 单次查询返回的最大行数，同时是 SQL 强制 LIMIT 的上限。
     text2sql_max_rows: int = 50
     # 查询执行超时时间（PostgreSQL statement_timeout，SQLite 测试环境跳过），单位秒。
@@ -131,11 +204,8 @@ class Settings(BaseSettings):
     # 未配置时用主库 engine，安全依赖 sqlglot 白名单校验。
     text2sql_readonly_database_url: str | None = None
 
-    class Config:
-        # 指定读取 .env 文件，会用env内变量覆盖上面类属性的默认值
-        env_file = ".env"
-        # 环境变量大小写不敏感，例如 .env 写 DATABASE_URL 和 database_url 效果一样
-        case_sensitive = False
+    # 环境变量大小写不敏感；迁移期间忽略旧版厂商密钥等已废弃变量。
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
 
 @lru_cache
@@ -144,7 +214,8 @@ def get_settings() -> Settings:
     获取全局配置单例
     lru_cache缓存装饰器：只实例化一次Settings对象，避免重复读取解析.env文件
     """
-    return Settings()
+    # 必填字段由 pydantic-settings 从环境注入，静态类型检查器无法推断该行为。
+    return Settings()  # type: ignore[call-arg]
 
 
 # 项目全局直接导入使用的配置实例

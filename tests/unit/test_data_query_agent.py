@@ -84,7 +84,7 @@ class CaptureRegistry:
         self.model = model
         self.calls = []
 
-    def get_model(self, model_name=None, thinking=None):
+    def get_model(self, model_name=None, thinking=None, temperature=None):
         self.calls.append((model_name, thinking))
         return self.model
 
