@@ -1,8 +1,10 @@
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.engine import Row
 from sqlmodel import Session
 
 from app.core.logging import logger
@@ -181,7 +183,7 @@ def retrieve_similar_chunks(
         logger.info(f"向量库结果：{vector_rows}")
 
         keywords = extract_query_keywords(query)
-        lexical_rows = []
+        lexical_rows: Sequence[Row[Any]] = []
         if keywords:
             patterns = [f"%{keyword}%" for keyword in keywords]
             lexical_sql = text("""
@@ -207,10 +209,15 @@ def retrieve_similar_chunks(
         lexical_ids: set[str] = set()
         for row in lexical_rows:
             chunk = _row_to_chunk(row)
+            # 数据库主键理论上非空；显式收窄类型也可避免异常数据参与去重。
+            if chunk.id is None:
+                continue
             chunks_by_id[chunk.id] = chunk
             lexical_ids.add(chunk.id)
         for row in vector_rows:
             chunk = _row_to_chunk(row)
+            if chunk.id is None:
+                continue
             if chunk.id not in chunks_by_id:
                 chunks_by_id[chunk.id] = chunk
 

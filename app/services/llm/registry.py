@@ -29,9 +29,7 @@ class LLMRegistry:
             )
 
         name = self.model_names[self.current_index]
-        return self._get_cached_model(
-            model_name=name, thinking=thinking, temperature=temperature
-        )
+        return self._get_cached_model(model_name=name, thinking=thinking, temperature=temperature)
 
     def rotate(self):
         """切换到下一个模型（用于故障切换）"""
