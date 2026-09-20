@@ -1,5 +1,5 @@
 # Makefile
-.PHONY: help setup dev test lint lint-fix clean-checkpoints migrate-gen migrate-up migrate-downgrade
+.PHONY: help setup dev test lint lint-fix format-check format type-check clean-checkpoints migrate-gen migrate-up migrate-downgrade
 
 help:
 	@echo "可用命令："
@@ -8,6 +8,9 @@ help:
 	@echo "  make test              运行测试"
 	@echo "  make lint              运行代码检查"
 	@echo "  make lint-fix          自动修复可安全处理的代码检查问题"
+	@echo "  make format-check      检查代码格式"
+	@echo "  make format            自动格式化代码"
+	@echo "  make type-check        运行 mypy 类型检查（错误需人工修复）"
 	@echo "  make migrate-up        初始化数据库（运行迁移）"
 	@echo "  make clean-checkpoints 清理过期 checkpoint"
 
@@ -49,6 +52,16 @@ lint:
 # 仅应用 Ruff 标记为安全的修复，语义相关问题仍需人工处理。
 lint-fix:
 	uv run ruff check . --fix
+
+format-check:
+	uv run ruff format --check .
+
+format:
+	uv run ruff format .
+
+# mypy 不提供通用自动修复，类型错误需根据检查结果人工处理。
+type-check:
+	uv run mypy app/
 
 clean-checkpoints:
 	uv run python scripts/clean_checkpoints.py 7

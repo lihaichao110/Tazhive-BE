@@ -131,4 +131,7 @@ COLUMN_LABELS: dict[str, str] = {
 
 def translate_columns(columns: list[str]) -> list[str]:
     """把结果列名中的已知英文列名替换为中文表头，未命中原样返回。"""
-    return [COLUMN_LABELS.get(column) or COLUMN_LABELS.get(column.lower()) or column for column in columns]
+    return [
+        COLUMN_LABELS.get(column) or COLUMN_LABELS.get(column.lower()) or column
+        for column in columns
+    ]

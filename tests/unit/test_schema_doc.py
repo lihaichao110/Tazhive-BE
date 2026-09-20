@@ -12,7 +12,13 @@ def test_known_columns_are_translated_and_unknown_pass_through():
 def test_every_allowed_table_field_has_a_label():
     """映射需覆盖 4 张白名单表的全部业务字段，漏了兜底就会漏中文表头。"""
     expected = {
-        "products": {"name", "classification", "terms_url", "description_url", "additional_premium_rule_url"},
+        "products": {
+            "name",
+            "classification",
+            "terms_url",
+            "description_url",
+            "additional_premium_rule_url",
+        },
         "plan_shows": {
             "group_code",
             "group_name",
