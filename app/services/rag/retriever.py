@@ -22,6 +22,7 @@ class RetrievedChunk:
     document_id: str | None = None
     chunk_index: int | None = None
     id: str | None = None
+    meta_data: dict[str, Any] | None = None
 
 
 # 连续中文（≥2 字）与英文/数字（≥3 字符）片段作为字面检索的关键词候选。
@@ -126,6 +127,7 @@ def _row_to_chunk(row: Any) -> RetrievedChunk:
         document_id=row.document_id,
         chunk_index=row.chunk_index,
         id=row.id,
+        meta_data=row.meta_data,
     )
 
 

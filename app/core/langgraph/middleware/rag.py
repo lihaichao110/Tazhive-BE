@@ -9,7 +9,12 @@ from app.core.config import settings
 from app.core.langgraph.prompts.system_chat import RAG_CONTEXT_RULE_PROMPT, SYSTEM_CHAT_PROMPT
 from app.core.logging import logger
 from app.services.rag.embedder import get_embedder
-from app.services.rag.retriever import retrieve_similar_chunks
+from app.services.rag.retriever import RetrievedChunk, retrieve_similar_chunks
+from app.services.references import (
+    attach_references,
+    build_rag_references,
+    make_reference_stream_event,
+)
 
 
 class RagMiddleware(AgentMiddleware):
@@ -37,15 +42,23 @@ class RagMiddleware(AgentMiddleware):
         )
 
         query = self._last_user_text(request.messages)
-        findings = await self._retrieve(query) if query else []
+        chunks = await self._retrieve(query) if query else []
 
-        if findings:
-            rag_context = "\n\n".join(findings)
+        if chunks:
+            rag_context = "\n\n".join(chunk.content for chunk in chunks)
             system_prompt = (
                 f"{system_prompt}\n\n{RAG_CONTEXT_RULE_PROMPT}\n\n参考资料：\n{rag_context}"
             )
 
-        return await handler(request.override(system_message=SystemMessage(content=system_prompt)))
+        references = build_rag_references(chunks)
+        writer = getattr(request.runtime, "stream_writer", None)
+        if writer is not None:
+            writer(make_reference_stream_event(references))
+
+        response = await handler(
+            request.override(system_message=SystemMessage(content=system_prompt))
+        )
+        return attach_references(response, references)
 
     @staticmethod
     def _last_user_text(messages: list[Any]) -> str | None:
@@ -57,7 +70,7 @@ class RagMiddleware(AgentMiddleware):
         logger.warning("没有找到用于检索 RAG 的用户消息")
         return None
 
-    async def _retrieve(self, query: str) -> list[str]:
+    async def _retrieve(self, query: str) -> list[RetrievedChunk]:
         logger.info(f"RAG 用户查询信息：{query}")
         embedder = get_embedder()
         query_embedding = await embedder.aembed_query(query)
@@ -73,6 +86,5 @@ class RagMiddleware(AgentMiddleware):
             score_threshold=settings.rag_score_threshold,
         )
 
-        findings = [chunk.content for chunk in chunks]
-        logger.info(f"RAG 检索 {len(findings)} chunks for query: {query[:50]}...")
-        return findings
+        logger.info(f"RAG 检索 {len(chunks)} chunks for query: {query[:50]}...")
+        return chunks

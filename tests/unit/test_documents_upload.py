@@ -6,6 +6,7 @@ import pytest
 from app.api.deps import get_current_user, get_db
 from app.api.v1 import documents
 from app.main import app
+from app.models.document import Document
 from app.services.rag.loader import DocumentParseError
 
 
@@ -106,3 +107,68 @@ def test_upload_rejects_unsupported_excel_extensions(
     assert response.status_code == 400
     assert response.json() == {"detail": f"文件类型不支持: {Path(filename).suffix}"}
     assert list(tmp_path.iterdir()) == []
+
+
+class _ChunkResult:
+    def __init__(self, chunk):
+        self._chunk = chunk
+
+    def first(self):
+        return self._chunk
+
+
+class _ChunkSession:
+    def __init__(self, document=None, chunk=None):
+        self.document = document
+        self.chunk = chunk
+
+    def get(self, model, document_id):
+        assert model is Document
+        return self.document
+
+    def exec(self, statement):
+        return _ChunkResult(self.chunk)
+
+
+def test_get_document_chunk_returns_authenticated_preview(client):
+    document = SimpleNamespace(id="doc-1", filename="员工手册.pdf", file_type="pdf")
+    chunk = SimpleNamespace(document_id="doc-1", chunk_index=3, content="报销制度正文")
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id="user-id")
+    app.dependency_overrides[get_db] = lambda: _ChunkSession(document, chunk)
+    try:
+        response = client.get("/api/v1/documents/doc-1/chunks/3")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "document_id": "doc-1",
+        "filename": "员工手册.pdf",
+        "file_type": "pdf",
+        "chunk_index": 3,
+        "content": "报销制度正文",
+    }
+
+
+@pytest.mark.parametrize(
+    ("document", "chunk", "detail"),
+    [
+        (None, None, "文档不存在"),
+        (SimpleNamespace(id="doc-1"), None, "文档片段不存在"),
+    ],
+)
+def test_get_document_chunk_returns_404(client, document, chunk, detail):
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id="user-id")
+    app.dependency_overrides[get_db] = lambda: _ChunkSession(document, chunk)
+    try:
+        response = client.get("/api/v1/documents/doc-1/chunks/99")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": detail}
+
+
+def test_get_document_chunk_requires_authentication(client):
+    response = client.get("/api/v1/documents/doc-1/chunks/0")
+    assert response.status_code == 401

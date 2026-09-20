@@ -31,3 +31,13 @@ class DocumentRead(BaseModel):
     """文本分块总数"""
     created_at: datetime
     """文档上传创建时间"""
+
+
+class DocumentChunkRead(BaseModel):
+    """RAG 来源预览返回的命中文档片段。"""
+
+    document_id: str
+    filename: str
+    file_type: str
+    chunk_index: int
+    content: str

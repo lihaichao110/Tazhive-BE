@@ -32,6 +32,7 @@ from app.core.langgraph.prompts.system_chat import (
     SEARCH_PROTOCOL_PROMPT,
     SYSTEM_CHAT_PROMPT,
 )
+from app.services.rag.retriever import RetrievedChunk
 
 
 @pytest.fixture(autouse=True)
@@ -208,7 +209,8 @@ async def test_search_gets_json_and_source_protocol_without_rag():
     prompt = system_messages[0].content
     assert CHART_RESPONSE_PROTOCOL_PROMPT in prompt
     assert SEARCH_PROTOCOL_PROMPT in prompt
-    assert "Markdown 链接" in prompt
+    assert "结构化 references" in prompt
+    assert "不要重复输出来源链接" in prompt
     assert "已由服务端强制执行联网搜索" in prompt
     assert "不要声称自己没有联网搜索能力" in prompt
 
@@ -331,6 +333,81 @@ async def test_chat_sse_unpacks_subgraph_events_and_persists_final_message(monke
     assert session.committed is True
     assert [message.role for message in session.added] == ["user", "assistant"]
     assert session.added[-1].content == "reply-from-insurance"
+    assert session.added[-1].references == []
+    stop = next(
+        item for item in payloads if item.get("choices", [{}])[0].get("finish_reason") == "stop"
+    )
+    assert stop["references"] == []
+
+
+@pytest.mark.asyncio
+async def test_rag_references_cross_nested_graph_into_sse_and_database(monkeypatch):
+    graph, _, _ = _build_supervisor("general")
+
+    class FakeSession:
+        def __init__(self):
+            self.added = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def add(self, value):
+            self.added.append(value)
+
+        def commit(self):
+            pass
+
+    session = FakeSession()
+    monkeypatch.setattr(chat_api, "Session", lambda _engine: session)
+    chunks = [
+        RetrievedChunk(
+            content="报销制度正文",
+            document_id="doc-1",
+            chunk_index=2,
+            meta_data={"source": "员工手册.pdf"},
+        )
+    ]
+
+    with patch(
+        "app.core.langgraph.middleware.rag.retrieve_similar_chunks",
+        return_value=chunks,
+    ):
+        frames = []
+        async for frame in chat_api.stream_chat_response(
+            thread_id="t-rag-references",
+            model="fake-model",
+            agent=graph,
+            input_state={
+                "messages": [HumanMessage(content="报销制度是什么？")],
+                "system_prompt": "你是测试助手",
+            },
+            config={"configurable": {"thread_id": "t-rag-references"}},
+            last_user_content="报销制度是什么？",
+        ):
+            frames.append(frame)
+
+    payloads = [
+        json.loads(frame.removeprefix("data: ").strip())
+        for frame in frames
+        if frame.startswith("data: {")
+    ]
+    stop = next(
+        item for item in payloads if item.get("choices", [{}])[0].get("finish_reason") == "stop"
+    )
+    assert stop["references"] == [
+        {
+            "source_type": "rag",
+            "title": "员工手册.pdf",
+            "url": "/api/v1/documents/doc-1/chunks/2",
+            "snippet": "报销制度正文",
+            "document_id": "doc-1",
+            "chunk_index": 2,
+        }
+    ]
+    assert session.added[-1].references == stop["references"]
 
 
 @pytest.mark.asyncio

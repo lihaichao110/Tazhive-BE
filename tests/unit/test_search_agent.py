@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.tools import StructuredTool
 
+from app.api.v1 import chat as chat_api
 from app.core.langgraph.agents.search import (
     MAX_RESULT_CONTENT_CHARS,
     SearchPlan,
@@ -161,6 +162,24 @@ async def test_search_pipeline_forces_tavily_and_isolates_old_assistant_history(
     assert result["search_error"] is None
     assert len(result["search_results"]) == 2
     assert "https://example.com/1" in result["messages"][-1].content
+    assert result["messages"][-1].additional_kwargs["references"] == [
+        {
+            "source_type": "web",
+            "title": "来源1",
+            "url": "https://example.com/1",
+            "snippet": "可信的搜索摘要",
+            "document_id": None,
+            "chunk_index": None,
+        },
+        {
+            "source_type": "web",
+            "title": "来源2",
+            "url": "https://example.com/2",
+            "snippet": "可信的搜索摘要",
+            "document_id": None,
+            "chunk_index": None,
+        },
+    ]
     # 回答模型保留当前问题，但看不到旧 Assistant 的错误能力声明。
     captured_text = "\n".join(str(message.content) for message in answer.captured[-1])
     assert "今日 AI 圈有什么大新闻" in captured_text
@@ -290,6 +309,8 @@ async def test_search_answer_tokens_bubble_through_nested_subgraph():
         subgraphs=True,
     ):
         if mode == "custom":
+            if isinstance(payload, dict):
+                continue
             token_text += payload.content if isinstance(payload.content, str) else ""
         else:
             _chunk, metadata = payload
@@ -297,3 +318,74 @@ async def test_search_answer_tokens_bubble_through_nested_subgraph():
 
     assert token_text == expected
     assert "model" in model_nodes
+
+
+@pytest.mark.asyncio
+async def test_search_references_are_emitted_in_stop_frame_and_persisted(monkeypatch):
+    async def handler(**kwargs):
+        return {
+            "results": [
+                {
+                    "title": "官方公告",
+                    "url": "https://example.com/notice",
+                    "content": "公告摘要",
+                }
+            ]
+        }
+
+    answer = CaptureModel(content='{"content":"搜索完成","charts":[]}')
+    graph = build_search_agent(
+        get_intent_spec("search"),
+        planner=FakePlanner(SearchPlan(queries=[SearchQuery(query="测试")])),
+        search_tool=make_search_tool(handler),
+        answer_model=answer,
+        registry=CaptureRegistry(answer),
+    )
+
+    class FakeSession:
+        def __init__(self):
+            self.added = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def add(self, value):
+            self.added.append(value)
+
+        def commit(self):
+            pass
+
+    session = FakeSession()
+    monkeypatch.setattr(chat_api, "Session", lambda _engine: session)
+
+    frames = []
+    async for frame in chat_api.stream_chat_response(
+        thread_id="thread-id",
+        model="fake-model",
+        agent=graph,
+        input_state={"messages": [HumanMessage(content="搜索测试")]},
+        config={"configurable": {"thread_id": "thread-id"}},
+        last_user_content="搜索测试",
+    ):
+        frames.append(frame)
+
+    payloads = [
+        json.loads(frame.removeprefix("data: ").strip())
+        for frame in frames
+        if frame.startswith("data: {")
+    ]
+    stop = next(item for item in payloads if item.get("choices", [{}])[0].get("finish_reason"))
+    assert stop["references"] == [
+        {
+            "source_type": "web",
+            "title": "官方公告",
+            "url": "https://example.com/notice",
+            "snippet": "公告摘要",
+            "document_id": None,
+            "chunk_index": None,
+        }
+    ]
+    assert session.added[-1].references == stop["references"]

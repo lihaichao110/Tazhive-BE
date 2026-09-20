@@ -34,11 +34,26 @@ def test_list_messages_places_user_before_assistant_on_tied_timestamps():
             ("user", "已提交投保人信息"),
             ("assistant", "投保人信息已保存，请填写被保险人信息。"),
         ]:
+            references = (
+                [
+                    {
+                        "source_type": "web",
+                        "title": "官方公告",
+                        "url": "https://example.com/notice",
+                        "snippet": "公告摘要",
+                        "document_id": None,
+                        "chunk_index": None,
+                    }
+                ]
+                if role == "assistant"
+                else []
+            )
             session.add(
                 Message(
                     thread_id=thread_id,
                     role=role,
                     content=content,
+                    references=references,
                     created_at=tied_at,
                     updated_at=tied_at,
                 )
@@ -57,6 +72,8 @@ def test_list_messages_places_user_before_assistant_on_tied_timestamps():
         assert response.status_code == 200
         roles = [message["role"] for message in response.json()]
         assert roles == ["user", "assistant"]
+        assert response.json()[0]["references"] == []
+        assert response.json()[1]["references"][0]["title"] == "官方公告"
     finally:
         app.dependency_overrides.clear()
 

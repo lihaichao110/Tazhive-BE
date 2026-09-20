@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.schemas.reference import Reference
 
 
 class MessageCreate(BaseModel):
@@ -28,6 +30,8 @@ class MessageRead(BaseModel):
     role: str
     # 消息文本内容
     content: str
+    # 回答引用来源；用户消息和无来源回答为空数组
+    references: list[Reference] = Field(default_factory=list)
     # 消息创建时间
     created_at: datetime
     # 使用量元数据（token消耗等信息）

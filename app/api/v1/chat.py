@@ -34,6 +34,11 @@ from app.services.database import engine
 from app.services.dataquery.table_markdown import merge_table_into_envelope
 from app.services.llm.registry import default_registry
 from app.services.plans import format_a2ui_fence
+from app.services.references import (
+    REFERENCE_METADATA_KEY,
+    REFERENCE_STREAM_EVENT,
+    extract_message_references,
+)
 
 logger = getLogger(__name__)
 
@@ -45,14 +50,17 @@ router = APIRouter(tags=["chat"])
 def extract_assistant_message_fields(msg: AIMessage) -> dict:
     """从 AIMessage 提取需要存入数据库的字段"""
     usage_meta = msg.usage_metadata if hasattr(msg, "usage_metadata") else None
-    additional = msg.additional_kwargs if msg.additional_kwargs else None
+    additional = dict(msg.additional_kwargs) if msg.additional_kwargs else {}
+    references = extract_message_references(msg)
+    additional.pop(REFERENCE_METADATA_KEY, None)
     response_meta = msg.response_metadata if msg.response_metadata else None
 
     return {
         "content": msg.content if isinstance(msg.content, str) else str(msg.content),
+        "references": references,
         "usage_metadata": usage_meta,
         "response_metadata": response_meta,
-        "additional_kwargs": additional,
+        "additional_kwargs": additional or None,
         "tool_calls": msg.tool_calls if msg.tool_calls else None,
         "invalid_tool_calls": msg.invalid_tool_calls if msg.invalid_tool_calls else None,
         "message_id": msg.id,
@@ -139,8 +147,8 @@ def _content_chunk_frame(model: str, content: str) -> str:
     return f"data: {json.dumps(chunk_data)}\n\n"
 
 
-async def _read_stream_attachments(agent, config: RunnableConfig) -> tuple[str, str]:
-    """流结束后一次读取本轮图状态里的正文附件，返回 (A2UI 围栏, 表格 Markdown)。
+async def _read_stream_attachments(agent, config: RunnableConfig) -> tuple[str, str, list[dict]]:
+    """流结束后读取本轮图状态，返回卡片、表格与结构化来源。
 
     两者都只走「状态 → API 出口」：不写进 checkpoint 消息（否则几十 KB 内容
     会在后续轮次被反复塞进模型上下文），但会随 assistant 消息一起下发并落库，
@@ -150,13 +158,22 @@ async def _read_stream_attachments(agent, config: RunnableConfig) -> tuple[str, 
         state = await agent.aget_state(config)
     except Exception as e:
         logger.warning(f"读取卡片状态失败，本轮不下发卡片：{e}")
-        return "", ""
+        return "", "", []
     values = state.values or {}
     x_card = values.get("x_card")
     fence = format_a2ui_fence(x_card) if isinstance(x_card, dict) and x_card.get("commands") else ""
     table_markdown = values.get("table_markdown")
     table = table_markdown if isinstance(table_markdown, str) and table_markdown else ""
-    return fence, table
+    messages = values.get("messages") or []
+    last_assistant = next(
+        (
+            message
+            for message in reversed(messages)
+            if isinstance(message, (AIMessage, AIMessageChunk))
+        ),
+        None,
+    )
+    return fence, table, extract_message_references(last_assistant)
 
 
 async def stream_chat_response(
@@ -180,6 +197,7 @@ async def stream_chat_response(
     final_message: AIMessage | AIMessageChunk | None = None
     card_fence = ""
     table_markdown = ""
+    references: list[dict] = []
     try:
         logger.info(f"流式响应开始：{config}")
         async for _namespace, mode, payload in agent.astream(
@@ -190,6 +208,10 @@ async def stream_chat_response(
         ):
             if mode == "custom":
                 chunk = payload
+                if isinstance(chunk, dict) and chunk.get("type") == REFERENCE_STREAM_EVENT:
+                    raw_references = chunk.get("references")
+                    references = raw_references if isinstance(raw_references, list) else []
+                    continue
                 # 只处理 StreamingMiddleware 转发的模型 chunk；其他结构化载荷
                 # （如未来的事件广播）不参与 token 流，跳过而不是抛 AttributeError。
                 if not isinstance(chunk, (AIMessage, AIMessageChunk)):
@@ -229,7 +251,9 @@ async def stream_chat_response(
                     final_message = _accumulate_model_message(final_message, chunk)
         # 正文附件在流正常结束后读取（放在 try 内而非 finally，避免客户端断开、
         # 生成器收尾阶段还要发起异步 IO）
-        card_fence, table_markdown = await _read_stream_attachments(agent, config)
+        card_fence, table_markdown, state_references = await _read_stream_attachments(agent, config)
+        if state_references:
+            references = state_references
     except Exception as e:
         # 模型彻底调用失败等异常直接向上抛出，这里统一转成 SSE error 帧，
         # 前端才能看到错误而不是只收到 [DONE]
@@ -237,6 +261,8 @@ async def stream_chat_response(
         error_data = {"error": str(e)}
         yield f"data: {json.dumps(error_data)}\n\n"
     finally:
+        if not references:
+            references = extract_message_references(final_message)
         composed_content = ""
         if card_fence:
             # A2UI 卡片作为最后一段正文增量下发，前端与历史消息拿到同形内容
@@ -269,6 +295,7 @@ async def stream_chat_response(
             "created": int(time.time()),
             "model": model,
             "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "references": references,
         }
         yield f"data: {json.dumps(end_data)}\n\n"
         yield "data: [DONE]\n\n"
@@ -285,6 +312,7 @@ async def stream_chat_response(
             if isinstance(final_message, AIMessage):
                 # 完整保存 assistant 消息（卡片围栏/合并表格一并落库，供历史重放）
                 assistant_fields = extract_assistant_message_fields(final_message)
+                assistant_fields["references"] = references
                 if composed_content:
                     assistant_fields["content"] = composed_content
                 elif card_fence:
@@ -295,7 +323,10 @@ async def stream_chat_response(
             elif full_content:
                 # 降级：只保存文本（但这种情况应避免）
                 assistant_message = Message(
-                    thread_id=thread_id, role="assistant", content=full_content
+                    thread_id=thread_id,
+                    role="assistant",
+                    content=full_content,
+                    references=references,
                 )
             if assistant_message is not None:
                 if user_message is not None:

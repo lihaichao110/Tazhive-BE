@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from app.core.config import settings
 from app.core.langgraph.middleware.rag import RagMiddleware
 from app.core.langgraph.prompts.system_chat import RAG_CONTEXT_RULE_PROMPT, SYSTEM_CHAT_PROMPT
+from app.services.rag.retriever import RetrievedChunk
 
 
 def _make_request(messages, state=None):
@@ -32,7 +33,17 @@ def _patch_rag(finding_contents):
     """mock embedder / 检索，检索固定返回 finding_contents"""
     embedder = AsyncMock()
     embedder.aembed_query.return_value = [0.1, 0.2]
-    retrieve_mock = MagicMock(return_value=[MagicMock(content=c) for c in finding_contents])
+    retrieve_mock = MagicMock(
+        return_value=[
+            RetrievedChunk(
+                content=content,
+                document_id="document-id",
+                chunk_index=index,
+                meta_data={"source": "员工手册.pdf"},
+            )
+            for index, content in enumerate(finding_contents)
+        ]
+    )
     patches = [
         patch("app.core.langgraph.middleware.rag.get_embedder", return_value=embedder),
         patch(
@@ -71,6 +82,44 @@ async def test_rag_injects_findings_into_system_message():
     assert RAG_CONTEXT_RULE_PROMPT in system_message.content
     assert "参考资料：" in system_message.content
     assert "chunk-1" in system_message.content and "chunk-2" in system_message.content
+
+
+@pytest.mark.asyncio
+async def test_rag_attaches_only_injected_chunks_as_structured_references():
+    _, _, patches = _patch_rag(["chunk-1", "chunk-2"])
+    captured = {}
+    mw = RagMiddleware()
+
+    for p in patches:
+        p.start()
+    try:
+        response = await mw.awrap_model_call(
+            _make_request([HumanMessage(content="报销规则是什么？")]),
+            _make_handler(captured),
+        )
+    finally:
+        for p in patches:
+            p.stop()
+
+    references = response.result[0].additional_kwargs["references"]
+    assert references == [
+        {
+            "source_type": "rag",
+            "title": "员工手册.pdf",
+            "url": "/api/v1/documents/document-id/chunks/0",
+            "snippet": "chunk-1",
+            "document_id": "document-id",
+            "chunk_index": 0,
+        },
+        {
+            "source_type": "rag",
+            "title": "员工手册.pdf",
+            "url": "/api/v1/documents/document-id/chunks/1",
+            "snippet": "chunk-2",
+            "document_id": "document-id",
+            "chunk_index": 1,
+        },
+    ]
 
 
 @pytest.mark.asyncio

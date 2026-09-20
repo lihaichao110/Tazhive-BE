@@ -29,6 +29,17 @@ class Message(BaseModel, table=True):
         sa_column=Column(Text, nullable=True, comment="消息文本内容；仅工具调用无输出时可为null")
     )
 
+    # 回答依据的结构化来源；所有消息统一返回数组，无来源时为空数组。
+    references: list[dict] = Field(
+        default_factory=list,
+        sa_column=Column(
+            JSON,
+            nullable=False,
+            default=list,
+            comment="回答引用来源，支持 RAG 文档片段与联网搜索网页",
+        ),
+    )
+
     # LangChain usage_metadata，输入输出、缓存读写token统计
     usage_metadata: dict | None = Field(
         sa_column=Column(

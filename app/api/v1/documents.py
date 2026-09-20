@@ -3,15 +3,16 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.api.deps import get_current_user, get_db
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.logging import logger
 from app.models.document import Document
+from app.models.document_chunk import DocumentChunk
 from app.models.user import User
-from app.schemas.document import DocumentRead, DocumentUploadResponse
+from app.schemas.document import DocumentChunkRead, DocumentRead, DocumentUploadResponse
 from app.services.rag.loader import DocumentParseError
 from app.services.rag.pipeline import ingest_document
 
@@ -86,7 +87,36 @@ async def upload_document(
 def list_documents(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     # 目前 Document 模型没有 user_id 字段，后续可添加权限控制
     # 这里先返回所有文档，实际应过滤当前用户
-    from sqlmodel import select
-
     docs = db.exec(select(Document)).all()
     return docs
+
+
+@router.get("/{document_id}/chunks/{chunk_index}", response_model=DocumentChunkRead)
+def get_document_chunk(
+    document_id: str,
+    chunk_index: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """返回 RAG 回答所引用的共享知识库片段。"""
+
+    document = db.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+
+    chunk = db.exec(
+        select(DocumentChunk).where(
+            DocumentChunk.document_id == document_id,
+            DocumentChunk.chunk_index == chunk_index,
+        )
+    ).first()
+    if chunk is None:
+        raise HTTPException(status_code=404, detail="文档片段不存在")
+
+    return DocumentChunkRead(
+        document_id=document.id,
+        filename=document.filename,
+        file_type=document.file_type,
+        chunk_index=chunk.chunk_index,
+        content=chunk.content,
+    )
