@@ -19,7 +19,15 @@ def test_load_xlsx_formats_each_data_row_as_self_contained_record(tmp_path):
     sheet.title = "汇总"
     sheet.append(["单位名称", "职称", "员工姓名", "分机号", "负责业务", "更新时间", "计算值"])
     sheet.append(
-        ["应用开发一处", None, "A\n产品", 12, date(2026, 9, 11), datetime(2026, 9, 11, 8, 30), "=B2*2"]
+        [
+            "应用开发一处",
+            None,
+            "A\n产品",
+            12,
+            date(2026, 9, 11),
+            datetime(2026, 9, 11, 8, 30),
+            "=B2*2",
+        ]
     )
     sheet.append([None, None, None, None, None, None, None])
 
@@ -41,7 +49,9 @@ def test_load_xlsx_drops_title_row_and_uses_next_row_as_header(tmp_path):
 
     texts = load_document(str(_save_workbook(workbook, tmp_path)))
 
-    assert texts == ["【工作表: 版本记录】日期: 44930；变更类型: creat；人员: 郎琳；变更内容: 创建文档"]
+    assert texts == [
+        "【工作表: 版本记录】日期: 44930；变更类型: creat；人员: 郎琳；变更内容: 创建文档"
+    ]
 
 
 def test_load_xlsx_falls_back_to_generic_columns_without_header(tmp_path):

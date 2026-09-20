@@ -73,7 +73,7 @@ def test_list_messages_orders_pairs_by_timestamp_then_user_first():
             (base, ["已提交投保人信息", "投保人信息已保存，请填写被保险人信息。"]),
             (base + timedelta(seconds=18), ["已确认投保方案", "方案和基础信息已确认。"]),
         ]:
-            for role, content in zip(["user", "assistant"], contents):
+            for role, content in zip(["user", "assistant"], contents, strict=True):
                 session.add(
                     Message(
                         thread_id=thread_id,

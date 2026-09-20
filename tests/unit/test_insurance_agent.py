@@ -410,7 +410,10 @@ async def test_category_filter_passes_condition_to_loader_and_scopes_cards():
     def loader(plan_filter=None):
         loader_filters.append(plan_filter)
         return PlanQueryResult(
-            rows=[_row(title="万能", title_id=4), _row(group_code="G0209", title="万能", title_id=4)],
+            rows=[
+                _row(title="万能", title_id=4),
+                _row(group_code="G0209", title="万能", title_id=4),
+            ],
             mode="filtered",
             matched_by="category",
             available_titles=TITLES,
@@ -464,9 +467,7 @@ async def test_no_match_suppresses_card_and_guides_to_categories():
     """零命中：不出卡片，回答提示列出分类引导用户。"""
     planner = FakePlanPlanner(PlanFilter(category="车险"))
     agent, model = _build_insurance(
-        lambda _filter=None: PlanQueryResult(
-            rows=[], mode="no_match", available_titles=TITLES
-        ),
+        lambda _filter=None: PlanQueryResult(rows=[], mode="no_match", available_titles=TITLES),
         planner=planner,
     )
 
@@ -486,9 +487,7 @@ async def test_planner_failure_degrades_to_full_catalog():
 
     def loader(plan_filter=None):
         loader_filters.append(plan_filter)
-        return PlanQueryResult(
-            rows=[_row(), _row(group_code="G0208")], available_titles=TITLES
-        )
+        return PlanQueryResult(rows=[_row(), _row(group_code="G0208")], available_titles=TITLES)
 
     agent, model = _build_insurance(loader, planner=planner)
 

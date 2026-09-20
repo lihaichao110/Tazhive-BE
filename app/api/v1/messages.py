@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.api.deps import get_current_user, get_db
 from app.models.message import Message
@@ -46,10 +46,10 @@ def list_messages(
     # 查询该会话下所有消息，按照创建时间升序；时间戳并列（同一请求内成对写入）时
     # user 排在 assistant 前，再以 id 兜底，保证同数据集多次查询顺序稳定，
     # 存量并列消息也能恢复正确展示
-    role_rank = case((Message.role == "user", 0), else_=1)
+    role_rank = case((col(Message.role) == "user", 0), else_=1)
     messages = db.exec(
         select(Message)
         .where(Message.thread_id == thread_id)
-        .order_by(Message.created_at, role_rank, Message.id)
+        .order_by(col(Message.created_at), role_rank, col(Message.id))
     ).all()
     return messages
