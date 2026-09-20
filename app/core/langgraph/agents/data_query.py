@@ -37,7 +37,7 @@ from app.core.langgraph.tools import tools as default_tools
 from app.core.logging import logger
 from app.services.dataquery.executor import QueryOutcome, default_executor
 from app.services.dataquery.guard import validate_sql
-from app.services.dataquery.schema_doc import SQL_SCHEMA_DOC
+from app.services.dataquery.schema_doc import SQL_SCHEMA_DOC, translate_columns
 from app.services.dataquery.table_markdown import build_table_markdown
 from app.services.llm.registry import LLMRegistry, default_registry
 
@@ -75,7 +75,10 @@ def _build_generation_prompt(recent_texts: list[str], *, feedback: str | None) -
         "4. 统计与排行类问题用 GROUP BY + ORDER BY，并加不超过 50 的 LIMIT。",
         "5. 问题涉及聊天内容、个人身份资料等这些表没有的数据时，sql 留 null，"
         "并在 unanswerable_reason 里说明缺什么数据，不要硬造 SQL。",
-        f"6. 输出必须是符合以下 JSON Schema 的 JSON 对象：\n{schema}",
+        "6. SELECT 的每个输出列都必须用中文 AS 别名（双引号包裹），"
+        '例如 SELECT classification AS "产品分类", COUNT(*) AS "产品数量"；'
+        "WHERE / GROUP BY / JOIN ON 仍使用原始字段名。",
+        f"7. 输出必须是符合以下 JSON Schema 的 JSON 对象：\n{schema}",
         f"当前时间：{current_time}",
         f"最近用户消息（最后一条是当前问题，其余供理解指代）："
         f"{json.dumps(recent_texts, ensure_ascii=False)}",
@@ -234,14 +237,17 @@ def build_data_query_agent(
         if outcome.error:
             return {"sql_error": f"执行失败：{outcome.error}"}
 
+        # 列名统一兜底翻译为中文表头：正常路径 SQL 已带中文别名（translate_columns
+        # 原样放行），模型漏起别名时由 COLUMN_LABELS 补救；表格与回答上下文共用
+        translated_columns = translate_columns(outcome.columns)
         update: dict[str, Any] = {
             "sql_error": None,
-            "query_columns": outcome.columns,
+            "query_columns": translated_columns,
             "query_rows": outcome.rows,
             "query_truncated": outcome.truncated,
         }
         if _should_build_table(outcome):
-            update["table_markdown"] = build_table_markdown(outcome.columns, outcome.rows)
+            update["table_markdown"] = build_table_markdown(translated_columns, outcome.rows)
         else:
             update["table_markdown"] = None
         logger.info(

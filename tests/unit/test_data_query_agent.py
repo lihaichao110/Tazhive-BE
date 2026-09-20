@@ -13,6 +13,7 @@ from pydantic import Field
 from app.api.v1 import chat as chat_api
 from app.core.langgraph.agents.data_query import (
     SQLDraft,
+    _build_generation_prompt,
     build_data_query_agent,
 )
 from app.core.langgraph.agents.factory import build_intent_agent
@@ -175,20 +176,21 @@ async def test_success_path_executes_normalized_sql_builds_table_and_injects_res
     assert "FROM plan_shows" in executor.executed[0]
     assert "LIMIT" in executor.executed[0].upper()
 
-    # 查询结果渲染成 Markdown 表格
+    # 查询结果渲染成 Markdown 表格，列名兜底翻译为中文表头
     table = result.get("table_markdown")
     assert isinstance(table, str)
     lines = table.splitlines()
-    assert lines[0] == "| group_name | order_num |"
+    assert lines[0] == "| 方案名称 | 分类内展示顺序 |"
     assert lines[1] == "| --- | --- |"
     assert "| 方案A | 3 |" in lines
     assert "| 方案B | 2 |" in lines
     assert result.get("x_card") is None
 
-    # 回答模型的系统提示注入了查询结果与表格说明，且旧 Assistant 历史被隔离
+    # 回答模型的系统提示注入了查询结果（列名同样已翻译）与表格说明，且旧 Assistant 历史被隔离
     system_prompt = answer.captured[0][0].content
     assert "<query_result>" in system_prompt
     assert "方案A" in system_prompt
+    assert "方案名称" in system_prompt
     assert "服务端自动附在回答末尾" in system_prompt
     assert "上一轮的旧回答" not in system_prompt
     assert not any(
@@ -199,6 +201,40 @@ async def test_success_path_executes_normalized_sql_builds_table_and_injects_res
     # 最终回复
     assert result["messages"][-1].content == answer.content
     assert result.get("sql_error") is None
+
+
+def test_generation_prompt_requires_chinese_output_aliases():
+    """SQL 生成规则要求每个输出列带中文 AS 别名，表头对用户才可读。"""
+    prompt = _build_generation_prompt(["在售产品按分类统计数量"], feedback=None)
+    assert "中文 AS 别名" in prompt
+    assert 'AS "产品分类"' in prompt
+
+
+@pytest.mark.asyncio
+async def test_unknown_columns_pass_through_without_label_mapping():
+    """COLUMN_LABELS 只兜底已知列名，模型自造的未知别名原样展示。"""
+    generator = FakeGenerator(
+        drafts=[SQLDraft(sql="SELECT status, weird_metric FROM insurance_applications")]
+    )
+    executor = FakeExecutor(
+        outcomes=[
+            QueryOutcome(
+                columns=["status", "weird_metric"],
+                rows=[["CONFIRMED", 3], ["IN_PROGRESS", 1]],
+            )
+        ]
+    )
+    answer = CaptureModel(
+        content=json.dumps({"content": "统计完成", "charts": []}, ensure_ascii=False)
+    )
+    graph = build_graph(generator, executor, answer)
+
+    result = await graph.ainvoke({"messages": [HumanMessage(content="各状态投保单数")]})
+
+    assert result.get("query_columns") == ["投保状态", "weird_metric"]
+    lines = result.get("table_markdown").splitlines()
+    assert lines[0] == "| 投保状态 | weird_metric |"
+    assert "| CONFIRMED | 3 |" in lines
 
 
 @pytest.mark.asyncio
@@ -397,7 +433,7 @@ async def test_sse_merges_table_into_envelope_and_persists(monkeypatch):
     streamed = contents[0]
     envelope = json.loads(streamed)
     assert envelope["content"].startswith("共 2 款")
-    assert "| name |" in envelope["content"]
+    assert "| 产品名称 |" in envelope["content"]
     assert "| 甲 |" in envelope["content"]
     assert envelope["charts"] == []
 

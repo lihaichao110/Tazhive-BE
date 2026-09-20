@@ -82,3 +82,53 @@ SQL_SCHEMA_DOC = """
 | 险种 | plan_shows.insur_list 里的险种代码 |
 | 在售方案 | plan_shows 全量（has_sale 语义未确认，不要用它过滤） |
 """.strip()
+
+COLUMN_LABELS: dict[str, str] = {
+    # 公共字段
+    "id": "ID",
+    "created_at": "创建时间",
+    "updated_at": "更新时间",
+    # products
+    "name": "产品名称",
+    "classification": "产品分类",
+    "terms_url": "条款链接",
+    "description_url": "说明文档链接",
+    "additional_premium_rule_url": "追加保费规则链接",
+    # plan_shows
+    "group_code": "方案编码",
+    "group_name": "方案名称",
+    "title_id": "分类ID",
+    "title": "分类名称",
+    "order_num": "分类内展示顺序",
+    "title_ord_num": "分类Tab展示顺序",
+    "has_sale": "是否在售",
+    "insur_list": "关联险种代码",
+    "is_more_insur": "是否多险种投保",
+    "contents": "卖点文案",
+    # insurance_applications
+    "user_id": "用户ID",
+    "thread_id": "会话ID",
+    "plan_title": "方案分类名称",
+    "current_step": "当前步骤",
+    "status": "投保状态",
+    "confirmed_at": "确认投保时间",
+    "version": "版本号",
+    "insur_list_json": "投保险种",
+    # insurance_events
+    "event_id": "事件ID",
+    "application_id": "投保单ID",
+    "event_name": "事件名",
+    "resulting_step": "事件后步骤",
+    "resulting_version": "事件后版本号",
+}
+"""结果列名 → 中文表头的兜底映射，与上方 SQL_SCHEMA_DOC 同源维护。
+
+正常路径下 SQL 生成规则已要求模型为每个输出列起中文 AS 别名，本映射只在
+模型漏起别名时兜底；表结构变更时需与 SQL_SCHEMA_DOC 同步更新，跨表同名字段
+（group_code / user_id / thread_id 等）在各表中含义一致，扁平键不会冲突。
+"""
+
+
+def translate_columns(columns: list[str]) -> list[str]:
+    """把结果列名中的已知英文列名替换为中文表头，未命中原样返回。"""
+    return [COLUMN_LABELS.get(column) or COLUMN_LABELS.get(column.lower()) or column for column in columns]
