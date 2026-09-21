@@ -16,3 +16,5 @@ build/
 htmlcov/
 *.log
 .DS_Store
+data/wiki/raw/*
+!data/wiki/raw/.gitkeep

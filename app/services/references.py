@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from langchain.agents.middleware import ModelResponse
 from langchain_core.messages import AIMessage, AIMessageChunk
@@ -27,11 +27,16 @@ def build_rag_references(chunks: list[RetrievedChunk]) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
-        source = (chunk.meta_data or {}).get("source")
-        title = str(source or f"文档 {chunk.document_id}").strip()
+        metadata = chunk.meta_data or {}
+        source = metadata.get("source")
+        source_type: Literal["rag", "wiki"] = (
+            "wiki" if metadata.get("source_type") == "wiki" else "rag"
+        )
+        title_value = metadata.get("wiki_title") if source_type == "wiki" else source
+        title = str(title_value or source or f"文档 {chunk.document_id}").strip()
         references.append(
             Reference(
-                source_type="rag",
+                source_type=source_type,
                 title=title,
                 url=f"/api/v1/documents/{chunk.document_id}/chunks/{chunk.chunk_index}",
                 snippet=_snippet(chunk.content),

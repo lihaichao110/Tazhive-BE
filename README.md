@@ -52,7 +52,7 @@
    make config-check
    ```
 
-   后续仅需同步依赖时，运行：
+后续仅需同步依赖时，运行：
 
    ```bash
    uv sync
@@ -63,6 +63,33 @@
    ```bash
    make dev
    ```
+
+### LLM Wiki 最小闭环
+
+Wiki 会把 `data/wiki/raw` 下的 Markdown 或文本资料编译为结构化页面，保存到
+`data/wiki/vault`，随后复用现有 RAG 管道写入 `documents` 和
+`document_chunks`。重复编译未变化的页面会跳过向量化；页面内容变化时会替换旧分块。
+
+1. 将资料放入 `data/wiki/raw`，例如 `data/wiki/raw/demo.md`。
+2. 使用已登录用户的令牌调用编译接口，`source` 只能是 raw 目录内的相对路径：
+
+   ```http
+   POST /api/v1/wiki/compile
+   Authorization: Bearer <access-token>
+   Content-Type: application/json
+
+   {"source": "demo.md"}
+   ```
+
+3. 或在本地通过命令执行同一条“编译 + 索引”链路：
+
+   ```bash
+   uv run python scripts/wiki_ingest.py demo.md
+   ```
+
+成功响应中的 `page_paths` 是生成的 Wiki 页面，`indexed_document_ids` 是已经进入
+向量库的文档 ID。之后普通聊天 Agent 会通过现有 RAG 中间件检索这些页面，并将来源
+标记为 `wiki`。
 
 ### 提交前检查
 

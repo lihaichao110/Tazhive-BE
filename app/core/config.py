@@ -209,6 +209,16 @@ class Settings(BaseSettings):
     # 环境变量大小写不敏感；迁移期间忽略旧版厂商密钥等已废弃变量。
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
+    # --------------------------- llm wiki 配置 ------------------------------------------
+    # wiki 模块根数据目录
+    wiki_data_dir: str = 'data/wiki'
+    # wiki 原始文档存放目录（未经处理的源文件）
+    wiki_raw_dir: str = 'data/wiki/raw'
+    # wiki 处理后/入库前的 vault 缓存目录（清洗、分段后的中间文件）
+    wiki_vault_dir: str = 'data/wiki/vault'
+    # wiki 处理规则文件
+    wiki_schema_path: str = 'app/services/wiki/schema/SCHEMA.md'
+
 
 @lru_cache
 def get_settings() -> Settings:

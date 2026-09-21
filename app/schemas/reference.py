@@ -6,7 +6,7 @@ from pydantic import BaseModel
 class Reference(BaseModel):
     """提供给前端展示的统一回答来源。"""
 
-    source_type: Literal["rag", "web"]
+    source_type: Literal["rag", "wiki", "web"]
     title: str
     url: str
     snippet: str

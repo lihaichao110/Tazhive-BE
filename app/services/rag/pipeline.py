@@ -1,6 +1,8 @@
+import hashlib
 from pathlib import Path
+from typing import Any
 
-from sqlmodel import Session
+from sqlmodel import Session, col, delete, select
 
 from app.core.logging import logger
 from app.models.document import Document
@@ -32,19 +34,39 @@ def build_chunks(texts: list[str], file_type: str) -> list[str]:
     return chunks
 
 
-def ingest_document(file_path: str, filename: str, db: Session) -> str:
+def ingest_document(
+    file_path: str,
+    filename: str,
+    db: Session,
+    *,
+    metadata: dict[str, Any] | None = None,
+    document_key: str | None = None,
+) -> str:
     """处理文档：加载、分块、嵌入、存储，返回 document_id"""
-    # 创建 Document 记录
-    doc = Document(
-        filename=filename,
-        file_type=Path(file_path).suffix.lower().lstrip("."),
-        content_hash="",  # 可后续计算哈希去重
-        status="processing",
-        chunk_count=0,
-    )
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
+    content_hash = hashlib.sha256(Path(file_path).read_bytes()).hexdigest()
+    doc = None
+    if document_key is not None:
+        doc = db.exec(select(Document).where(Document.filename == document_key)).first()
+        if doc is not None and doc.content_hash == content_hash and doc.status == "done":
+            logger.info("文档内容未变化，跳过重复摄入：%s", document_key)
+            return doc.id
+
+    # document_key 用作可重复定位的内部来源键；普通上传仍显示原文件名。
+    if doc is None:
+        doc = Document(
+            filename=document_key or filename,
+            file_type=Path(file_path).suffix.lower().lstrip("."),
+            content_hash=content_hash,
+            status="processing",
+            chunk_count=0,
+        )
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+    else:
+        doc.status = "processing"
+        doc.content_hash = content_hash
+
     doc_id = doc.id
 
     try:
@@ -56,13 +78,16 @@ def ingest_document(file_path: str, filename: str, db: Session) -> str:
 
         # 先完整校验数量，再写入 Session，避免不一致时遗留部分待提交的分块。
         chunk_embeddings = list(zip(all_chunks, embeddings, strict=True))
+        if document_key is not None:
+            db.exec(delete(DocumentChunk).where(col(DocumentChunk.document_id) == doc_id))
+        chunk_metadata = {"source": filename, **(metadata or {})}
         for idx, (chunk_text_content, embedding) in enumerate(chunk_embeddings):
             chunk = DocumentChunk(
                 document_id=doc_id,
                 chunk_index=idx,
                 content=chunk_text_content,
                 embedding=embedding,
-                meta_data={"source": filename},
+                meta_data=chunk_metadata.copy(),
             )
             db.add(chunk)
 
@@ -72,7 +97,16 @@ def ingest_document(file_path: str, filename: str, db: Session) -> str:
         logger.info(f"文档 {doc_id} 对应的 {len(all_chunks)} chunks")
         return doc_id
     except Exception as e:
-        doc.status = "error"
+        # 避免异常发生在写入中途时把部分 chunk 一并提交。
+        rollback = getattr(db, "rollback", None)
+        if callable(rollback):
+            rollback()
+        get = getattr(db, "get", None)
+        persisted_doc = get(Document, doc_id) if callable(get) else doc
+        if persisted_doc is None:
+            persisted_doc = doc
+            db.add(persisted_doc)
+        persisted_doc.status = "error"
         db.commit()
         logger.error(f"写入失败 {doc_id}: {e}")
         raise
