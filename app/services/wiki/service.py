@@ -92,6 +92,8 @@ class WikiService:
             llm_client=llm_client,
             vault_dir=self.vault_dir,
             schema_path=self.schema_path,
+            batch_chars=settings.wiki_compile_batch_chars,
+            max_batches=settings.wiki_compile_max_batches,
         )
         batch = compiler.compile_file(source_path)
         page_paths = [compiler.page_path(page) for page in batch.pages]

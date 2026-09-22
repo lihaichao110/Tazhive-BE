@@ -8,6 +8,7 @@
 - `concept`：概念、方法、术语、技术原理
 - `synthesis`：跨多个来源的综合摘要
 - `comparison`：两个或多个对象的对比分析
+- `reference`：程序生成的原始表格明细，LLM 不应自行生成该类型
 
 ## 2. 文件命名
 
@@ -21,7 +22,7 @@
 
 ```yaml
 ---
-type: entity | concept | synthesis | comparison
+type: entity | concept | synthesis | comparison | reference
 title: 页面标题
 aliases: []
 sources: []

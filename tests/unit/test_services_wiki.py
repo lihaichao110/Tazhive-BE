@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.services.wiki.ingestion.parsers import parse_source
 from app.services.wiki.ingestion.pipeline import WikiCompiler
 from app.services.wiki.service import WikiService
 
@@ -106,3 +107,93 @@ def test_wiki_service_compiles_and_indexes_pages(tmp_path, monkeypatch):
     assert captured["page_paths"] == [service.vault_dir / "泰智汇.md"]
     assert captured["vault_dir"] == service.vault_dir
     assert captured["db"] is fake_db
+
+
+def test_wiki_compiler_summarizes_large_table_and_keeps_detail_pages(tmp_path):
+    from openpyxl import Workbook
+
+    raw_path = tmp_path / "raw" / "codes.xlsx"
+    vault_dir = tmp_path / "vault"
+    schema_path = tmp_path / "SCHEMA.md"
+    raw_path.parent.mkdir()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "职业"
+    sheet.append(["代码", "名称"])
+    for index in range(1, 6):
+        sheet.append([f"{index:03d}", f"职业{index}-" + "说明" * 12])
+    workbook.save(raw_path)
+    workbook.close()
+    schema_path.write_text("测试 Schema", encoding="utf-8")
+
+    calls = []
+
+    def invoke(messages):
+        calls.append(messages)
+        return _wiki_response("职业类别摘要")
+
+    parsed = parse_source(raw_path, batch_chars=160)
+    compiler = WikiCompiler(
+        SimpleNamespace(invoke=invoke),
+        vault_dir,
+        schema_path,
+        batch_chars=160,
+    )
+    batch = compiler.compile_file(raw_path)
+
+    assert len(calls) == len(parsed.batches) + 1
+    reference_pages = [page for page in batch.pages if page.type == "reference"]
+    assert len(reference_pages) == len(parsed.batches)
+    combined_detail = "\n".join(page.body for page in reference_pages)
+    for index in range(1, 6):
+        assert combined_detail.count(f"职业{index}-") == 1
+    assert (vault_dir / "职业类别摘要.md").exists()
+    assert all(compiler.page_path(page).exists() for page in reference_pages)
+
+
+def test_wiki_compiler_rejects_too_many_batches_before_llm_call(tmp_path):
+    from openpyxl import Workbook
+
+    raw_path = tmp_path / "codes.xlsx"
+    schema_path = tmp_path / "SCHEMA.md"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["代码", "名称"])
+    sheet.append(["001", "很长的说明" * 20])
+    sheet.append(["002", "另一个说明" * 20])
+    workbook.save(raw_path)
+    workbook.close()
+    schema_path.write_text("测试 Schema", encoding="utf-8")
+    calls = []
+    model = SimpleNamespace(invoke=lambda messages: calls.append(messages))
+    compiler = WikiCompiler(
+        model,
+        tmp_path / "vault",
+        schema_path,
+        batch_chars=100,
+        max_batches=1,
+    )
+
+    with pytest.raises(ValueError, match="超过上限"):
+        compiler.compile_file(raw_path)
+    assert calls == []
+
+
+def test_wiki_compiler_rejects_duplicate_titles_before_writing(tmp_path):
+    raw_path = tmp_path / "demo.md"
+    schema_path = tmp_path / "SCHEMA.md"
+    raw_path.write_text("测试", encoding="utf-8")
+    schema_path.write_text("测试 Schema", encoding="utf-8")
+    response = json.loads(_wiki_response().content)
+    response["pages"].append(response["pages"][0].copy())
+    model = SimpleNamespace(
+        invoke=lambda _messages: SimpleNamespace(
+            content=json.dumps(response, ensure_ascii=False)
+        )
+    )
+    vault_dir = tmp_path / "vault"
+    compiler = WikiCompiler(model, vault_dir, schema_path)
+
+    with pytest.raises(ValueError, match="重复"):
+        compiler.compile_file(raw_path)
+    assert not vault_dir.exists()

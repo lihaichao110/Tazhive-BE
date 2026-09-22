@@ -66,9 +66,11 @@
 
 ### LLM Wiki 最小闭环
 
-Wiki 会把 `data/wiki/raw` 下的 Markdown 或文本资料编译为结构化页面，保存到
+Wiki 会把 `data/wiki/raw` 下的 Markdown、文本或表格资料编译为结构化页面，保存到
 `data/wiki/vault`，随后复用现有 RAG 管道写入 `documents` 和
 `document_chunks`。重复编译未变化的页面会跳过向量化；页面内容变化时会替换旧分块。
+表格支持 `.xlsx`、`.xls`、`.csv` 和 `.tsv`：LLM 生成摘要页面，程序同时生成
+不经过模型改写的 `reference` 明细页面。大表会按完整行自动分批，再汇总摘要。
 
 1. 将资料放入 `data/wiki/raw`，例如 `data/wiki/raw/demo.md`。
 2. 使用已登录用户的令牌调用编译接口，`source` 只能是 raw 目录内的相对路径：

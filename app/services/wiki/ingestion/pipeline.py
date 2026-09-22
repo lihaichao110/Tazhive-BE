@@ -7,8 +7,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.schemas.wiki import WikiPage, WikiPageBatch
 from app.services.wiki.ingestion.parsers import parse_source
+from app.services.wiki.ingestion.parsers.models import SourceBatch
 from app.services.wiki.ingestion.prompts import (
+    BATCH_COMPILE_SYSTEM_PROMPT,
     COMPILE_SYSTEM_PROMPT,
+    MERGE_COMPILE_SYSTEM_PROMPT,
     build_compile_user_prompt,
 )
 
@@ -19,13 +22,27 @@ class WikiCompiler:
     流程：读取源文件 -> 构造Prompt -> LLM调用 -> 解析LLM返回JSON -> 写md知识库页面 -> 更新索引与日志
     """
 
-    def __init__(self, llm_client, vault_dir: Path, schema_path: Path) -> None:
+    def __init__(
+        self,
+        llm_client,
+        vault_dir: Path,
+        schema_path: Path,
+        *,
+        batch_chars: int = 24_000,
+        max_batches: int = 20,
+    ) -> None:
         # LLM客户端实例，用来调用大模型对话接口
         self.llm_client = llm_client
         # 知识库输出目录，存放编译后的 .md wiki页面
         self.vault_dir = Path(vault_dir)
         # Wiki结构Schema文件路径，给LLM参考输出格式与约束
         self.schema_path = Path(schema_path)
+        if batch_chars <= 0:
+            raise ValueError("Wiki 表格批次字符数必须大于 0")
+        if max_batches <= 0:
+            raise ValueError("Wiki 表格最大批次数必须大于 0")
+        self.batch_chars = batch_chars
+        self.max_batches = max_batches
 
     def compile_file(self, source_path: Path) -> WikiPageBatch:
         """
@@ -34,29 +51,129 @@ class WikiCompiler:
         :return: WikiPageBatch，本次编译产出的所有页面 + 编译备注
         """
         source_path = Path(source_path)
-        # 解析原始素材，提取文本内容（pdf/md/txt等统一转纯文本）
-        source_text = parse_source(source_path)
+        parsed_source = parse_source(source_path, batch_chars=self.batch_chars)
+        if len(parsed_source.batches) > self.max_batches:
+            raise ValueError(
+                f"表格被拆分为 {len(parsed_source.batches)} 个批次，"
+                f"超过上限 {self.max_batches}；请拆分文件或调整 WIKI_COMPILE_MAX_BATCHES"
+            )
         # 读取wiki schema，作为LLM输出规范
         schema = self.schema_path.read_text(encoding="utf-8")
-        # 组装用户侧Prompt：schema + 源文件路径 + 原文内容
+        if parsed_source.kind == "table" and len(parsed_source.batches) > 1:
+            batch = self._compile_large_table(parsed_source.batches, source_path, schema)
+        else:
+            source_batch = parsed_source.batches[0]
+            batch = self._invoke_compile(
+                schema=schema,
+                source_path=str(source_path),
+                source_text=source_batch.text,
+                system_prompt=COMPILE_SYSTEM_PROMPT,
+            )
+
+        if parsed_source.kind == "table":
+            batch.pages.extend(self._build_reference_pages(parsed_source.batches, source_path))
+        self._validate_unique_pages(batch)
+        # 将batch内所有页面写入vault目录md文件，更新索引和编译日志
+        self._write_pages(batch, source_path)
+        return batch
+
+    def _invoke_compile(
+        self,
+        *,
+        schema: str,
+        source_path: str,
+        source_text: str,
+        system_prompt: str,
+    ) -> WikiPageBatch:
+        """调用一次模型并校验结构化输出。"""
         user_prompt = build_compile_user_prompt(
             schema=schema,
-            source_path=str(source_path),
+            source_path=source_path,
             source_text=source_text,
         )
-        # 项目统一使用 LangChain BaseChatModel，通过 invoke 传入标准消息。
         response = self.llm_client.invoke(
             [
-                SystemMessage(content=COMPILE_SYSTEM_PROMPT),
+                SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt),
             ]
         )
         raw_output = self._response_text(response.content)
-        # 解析LLM返回的文本，转为WikiPageBatch结构化对象
-        batch = self._parse_output(raw_output)
-        # 将batch内所有页面写入vault目录md文件，更新索引和编译日志
-        self._write_pages(batch, source_path)
-        return batch
+        return self._parse_output(raw_output)
+
+    def _compile_large_table(
+        self,
+        source_batches: tuple[SourceBatch, ...],
+        source_path: Path,
+        schema: str,
+    ) -> WikiPageBatch:
+        """先逐批提炼大表，再将中间结果汇总成最终页面。"""
+        intermediate: list[dict] = []
+        for source_batch in source_batches:
+            label = (
+                f"{source_path}#工作表={source_batch.section_name}"
+                f"&批次={source_batch.part_number}"
+            )
+            batch = self._invoke_compile(
+                schema=schema,
+                source_path=label,
+                source_text=source_batch.text,
+                system_prompt=BATCH_COMPILE_SYSTEM_PROMPT,
+            )
+            intermediate.append(batch.model_dump(mode="json"))
+
+        merge_text = (
+            "以下 JSON 数组是同一个表格文件各批次的中间提炼结果。"
+            "请去重并合并为最终 Wiki 页面：\n\n"
+            + json.dumps(intermediate, ensure_ascii=False)
+        )
+        return self._invoke_compile(
+            schema=schema,
+            source_path=str(source_path),
+            source_text=merge_text,
+            system_prompt=MERGE_COMPILE_SYSTEM_PROMPT,
+        )
+
+    @staticmethod
+    def _build_reference_pages(
+        source_batches: tuple[SourceBatch, ...], source_path: Path
+    ) -> list[WikiPage]:
+        """用程序直接生成表格明细页，避免 LLM 改写或遗漏原始行。"""
+        pages: list[WikiPage] = []
+        for source_batch in source_batches:
+            title = (
+                f"{source_path.stem}-{source_batch.section_name}-"
+                f"明细-{source_batch.part_number:03d}"
+            )
+            row_range = f"第 {source_batch.row_start}–{source_batch.row_end} 行"
+            pages.append(
+                WikiPage(
+                    type="reference",
+                    title=title,
+                    aliases=[],
+                    summary=f"{source_path.name} 的 {source_batch.section_name} 工作表{row_range}。",
+                    body=source_batch.detail_markdown or source_batch.text,
+                    related=[],
+                    sources=[str(source_path)],
+                    confidence="high",
+                    conflicts=[],
+                )
+            )
+        return pages
+
+    def _validate_unique_pages(self, batch: WikiPageBatch) -> None:
+        """写盘前阻止重复标题或清理后文件名冲突造成静默覆盖。"""
+        titles: set[str] = set()
+        filenames: set[str] = set()
+        for page in batch.pages:
+            normalized_title = page.title.strip().casefold()
+            if normalized_title in titles:
+                raise ValueError(f"LLM 输出了重复的 Wiki 页面标题: {page.title}")
+            titles.add(normalized_title)
+
+            filename = self.page_path(page).name.casefold()
+            if filename in filenames:
+                raise ValueError(f"Wiki 页面文件名发生冲突: {page.title}")
+            filenames.add(filename)
 
     @staticmethod
     def _response_text(content: object) -> str:

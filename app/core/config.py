@@ -218,6 +218,10 @@ class Settings(BaseSettings):
     wiki_vault_dir: str = 'data/wiki/vault'
     # wiki 处理规则文件
     wiki_schema_path: str = 'app/services/wiki/schema/SCHEMA.md'
+    # 表格源文件每个 LLM 编译批次的最大字符数（不会拆分单行）
+    wiki_compile_batch_chars: int = 24_000
+    # 单个表格源文件允许触发的最大分批数
+    wiki_compile_max_batches: int = 20
 
 
 @lru_cache
