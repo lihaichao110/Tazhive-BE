@@ -37,7 +37,15 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://agent:agent123@localhost:5432/agentdb
       SECRET_KEY: test-secret-key
-      OPENAI_API_KEY: test-key
+      # Alembic 导入应用配置时也会执行必填项校验，因此 CI 需提供完整且相互一致的 LLM 配置。
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: test-key
+      LLM_MODELS: test-model
+      LLM_DEFAULT_MODEL: test-model
+      LLM_FAST_MODEL: test-model
+      LLM_TEXT2SQL_MODEL: test-model
+      LLM_DEFAULT_TEMPERATURE: "0.7"
+      LLM_MODEL_ALIASES: "{}"
 
     steps:
       # 固定到 checkout v4.2.2 的提交，避免可移动标签带来的供应链风险。
