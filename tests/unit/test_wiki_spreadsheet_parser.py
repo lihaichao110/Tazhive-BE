@@ -54,7 +54,9 @@ def test_parse_xlsx_batches_only_between_rows(tmp_path):
     for index in range(1, 5):
         assert combined.count(f"第{index}行-") == 1
     assert all(batch.text.startswith("## 工作表：数据") for batch in parsed.batches)
-    assert all(batch.row_start is not None and batch.row_end is not None for batch in parsed.batches)
+    assert all(
+        batch.row_start is not None and batch.row_end is not None for batch in parsed.batches
+    )
 
 
 def test_parse_xlsx_keeps_physical_row_numbers_after_blank_rows(tmp_path):

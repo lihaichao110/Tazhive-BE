@@ -20,4 +20,3 @@ class ParsedSource:
 
     kind: Literal["text", "table"]
     batches: tuple[SourceBatch, ...]
-

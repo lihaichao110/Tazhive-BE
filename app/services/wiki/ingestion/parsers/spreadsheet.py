@@ -89,7 +89,10 @@ def _load_xls(path: Path) -> list[TableSection]:
                 continue
             rows: list[TableRow] = []
             for row_index in range(sheet.nrows):
-                row = [_format_xls_cell(workbook, sheet.cell(row_index, col)) for col in range(sheet.ncols)]
+                row = [
+                    _format_xls_cell(workbook, sheet.cell(row_index, col))
+                    for col in range(sheet.ncols)
+                ]
                 while row and not row[-1]:
                     row.pop()
                 if any(row):
@@ -126,9 +129,7 @@ def _load_csv(path: Path) -> list[TableSection]:
         pass
     rows = [
         (row_number, cells)
-        for row_number, row in enumerate(
-            csv.reader(StringIO(text), delimiter=delimiter), start=1
-        )
+        for row_number, row in enumerate(csv.reader(StringIO(text), delimiter=delimiter), start=1)
         if any(cells := _trim_row(row))
     ]
     return [("数据", rows)] if rows else []

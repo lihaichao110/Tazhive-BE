@@ -187,9 +187,7 @@ def test_wiki_compiler_rejects_duplicate_titles_before_writing(tmp_path):
     response = json.loads(_wiki_response().content)
     response["pages"].append(response["pages"][0].copy())
     model = SimpleNamespace(
-        invoke=lambda _messages: SimpleNamespace(
-            content=json.dumps(response, ensure_ascii=False)
-        )
+        invoke=lambda _messages: SimpleNamespace(content=json.dumps(response, ensure_ascii=False))
     )
     vault_dir = tmp_path / "vault"
     compiler = WikiCompiler(model, vault_dir, schema_path)

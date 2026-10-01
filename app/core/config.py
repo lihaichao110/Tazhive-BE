@@ -211,13 +211,13 @@ class Settings(BaseSettings):
 
     # --------------------------- llm wiki 配置 ------------------------------------------
     # wiki 模块根数据目录
-    wiki_data_dir: str = 'data/wiki'
+    wiki_data_dir: str = "data/wiki"
     # wiki 原始文档存放目录（未经处理的源文件）
-    wiki_raw_dir: str = 'data/wiki/raw'
+    wiki_raw_dir: str = "data/wiki/raw"
     # wiki 处理后/入库前的 vault 缓存目录（清洗、分段后的中间文件）
-    wiki_vault_dir: str = 'data/wiki/vault'
+    wiki_vault_dir: str = "data/wiki/vault"
     # wiki 处理规则文件
-    wiki_schema_path: str = 'app/services/wiki/schema/SCHEMA.md'
+    wiki_schema_path: str = "app/services/wiki/schema/SCHEMA.md"
     # 表格源文件每个 LLM 编译批次的最大字符数（不会拆分单行）
     wiki_compile_batch_chars: int = 24_000
     # 单个表格源文件允许触发的最大分批数

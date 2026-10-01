@@ -110,8 +110,7 @@ class WikiCompiler:
         intermediate: list[dict] = []
         for source_batch in source_batches:
             label = (
-                f"{source_path}#工作表={source_batch.section_name}"
-                f"&批次={source_batch.part_number}"
+                f"{source_path}#工作表={source_batch.section_name}&批次={source_batch.part_number}"
             )
             batch = self._invoke_compile(
                 schema=schema,
@@ -123,8 +122,7 @@ class WikiCompiler:
 
         merge_text = (
             "以下 JSON 数组是同一个表格文件各批次的中间提炼结果。"
-            "请去重并合并为最终 Wiki 页面：\n\n"
-            + json.dumps(intermediate, ensure_ascii=False)
+            "请去重并合并为最终 Wiki 页面：\n\n" + json.dumps(intermediate, ensure_ascii=False)
         )
         return self._invoke_compile(
             schema=schema,
